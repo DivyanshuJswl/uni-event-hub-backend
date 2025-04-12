@@ -1,0 +1,22 @@
+# node_modules
+# dist
+# package-lock.json
+# CHANGELOG.md
+# *.env
+# Ignore node_modules folder
+node_modules/
+
+# Ignore log files
+*.log
+package-lock.json
+CHANGELOG.md
+# Ignore environment variables
+.env
+
+# Ignore compiled files
+*.class
+*.o
+*.exe
+
+# Ignore VS Code settings (optional)
+.vscode/
