@@ -28,7 +28,20 @@ const globalErrorHandler = require("./middleware/errorMiddleware");
 const app = express();
 
 // ===== GLOBAL MIDDLEWARES =====
-app.use(helmet());
+// Replace your current helmet configuration
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", "https://infragrid.v.network"],
+      // You can add other directives as needed:
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      fontSrc: ["'self'"]
+    }
+  }
+}));
 app.use(compression());
 
 // Development logging
