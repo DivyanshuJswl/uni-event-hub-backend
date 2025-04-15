@@ -158,6 +158,9 @@ const server = app.listen(port, () => {
   console.log("- PATCH /api/wallet");
 });
 
+server.setTimeout(0); // Disable timeout completely
+
+
 // Handle unhandled rejections
 process.on("unhandledRejection", (err) => {
   console.error("UNHANDLED REJECTION! Shutting down...");
