@@ -119,6 +119,18 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/roles", roleRoutes);
 
+app.get("/api/tech-news", async (req, res) => {
+  const url = `https://newsapi.org/v2/top-headlines?category=technology&pageSize=8&apiKey=${process.env.NEWS_API_KEY}`;
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error("Error fetching news:", err.message);
+    res.status(500).json({ error: "Failed to fetch news" });
+  }
+});
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.status(200).json({
