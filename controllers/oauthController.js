@@ -1,7 +1,7 @@
 const { OAuth2Client } = require("google-auth-library");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const Student = require("../models/Student");
+const Student = require("../models/student");
 
 // Initialize the client properly
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
