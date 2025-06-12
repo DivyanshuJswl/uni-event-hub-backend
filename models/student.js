@@ -16,6 +16,16 @@ const StudentSchema = new mongoose.Schema(
       min: [1, "Year must be at least 1"],
       max: [5, "Year cannot exceed 5"],
     },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    avatar: String,
+    isVerified: {
+      type: Boolean,
+      default: false
+    },
     tokens: {
       type: [
         {
@@ -44,7 +54,10 @@ const StudentSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, "Please provide a password"],
+      required: function () {
+        // Only require password if not using Google login
+        return !this.googleId;
+      },
       minlength: [8, "Password must be at least 8 characters"],
       select: false,
     },
@@ -153,4 +166,4 @@ StudentSchema.methods.upgradeToOrganizer = function () {
   this.role = "organizer";
   return this.save();
 };
-module.exports = mongoose.model("Student", StudentSchema);
+module.exports =mongoose.models.Student || mongoose.model("Student", StudentSchema);

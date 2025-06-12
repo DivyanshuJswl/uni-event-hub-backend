@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const oauthController = require('../controllers/oauthController');
 const authMiddleware = require('../middleware/authMiddleware');
 
 // @desc    Register new student
@@ -8,6 +9,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 // @access  Public
 router.post('/signup', authController.signup);
 
+router.post('/google', oauthController.googleLogin);
 
 // @desc    Login student
 // @route   POST /api/auth/login

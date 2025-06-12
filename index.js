@@ -36,8 +36,7 @@ if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
 
-app.set('trust proxy', 1); // trust first proxy
-
+app.set("trust proxy", 1); // trust first proxy
 
 // Rate limiting
 const apiLimiter = rateLimit({
@@ -56,7 +55,6 @@ const authLimiter = rateLimit({
 app.use("/api", apiLimiter);
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/signup", authLimiter);
-
 // Body parser, reading data from body into req.body
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
@@ -171,7 +169,6 @@ const server = app.listen(port, () => {
 });
 
 server.setTimeout(0); // Disable timeout completely
-
 
 // Handle unhandled rejections
 process.on("unhandledRejection", (err) => {
