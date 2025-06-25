@@ -69,6 +69,29 @@ const EventSchema = new mongoose.Schema(
       enum: ["upcoming", "ongoing", "completed", "cancelled"],
       default: "upcoming",
     },
+    images: [{
+      url: {
+        type: String,
+        required: true
+      },
+      publicId: String,
+      width: Number,
+      height: Number,
+      format: String,
+      bytes: Number,
+      isFeatured: {
+        type: Boolean,
+        default: false
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    imageUrl: {  // Main featured image URL for quick access
+      type: String,
+      select: false  // Don't include by default in queries
+    },
   },
   {
     timestamps: true,

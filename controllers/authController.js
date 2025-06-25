@@ -13,17 +13,18 @@ const signToken = (id) => {
 // Create and send token with response
 const createSendToken = (student, statusCode, res) => {
   const token = signToken(student._id);
-  
+
   // Initialize tokens array if undefined
   if (!student.tokens) {
     student.tokens = [];
   }
-  
+
   // Store token in student's tokens array
   student.tokens.push({ token });
-  
+
   // Save the student document
-  student.save({ validateBeforeSave: false })
+  student
+    .save({ validateBeforeSave: false })
     .then(() => {
       // Remove sensitive data from output
       student.password = undefined;
@@ -38,10 +39,10 @@ const createSendToken = (student, statusCode, res) => {
         },
       });
     })
-    .catch(err => {
+    .catch((err) => {
       res.status(500).json({
         status: "error",
-        message: "Error saving token"
+        message: "Error saving token",
       });
     });
 };
@@ -89,7 +90,9 @@ exports.login = async (req, res, next) => {
     }
 
     // 2) Check if student exists and password is correct
-    const student = await Student.findOne({ email, active: true }).select("+password");
+    const student = await Student.findOne({ email, active: true }).select(
+      "+password"
+    );
 
     if (!student || !(await student.correctPassword(password))) {
       return next(new AppError("Incorrect email or password", 401));
@@ -202,5 +205,40 @@ exports.updatePassword = async (req, res, next) => {
     createSendToken(student, 200, res);
   } catch (err) {
     next(err);
+  }
+};
+
+const cloudinary = require("../config/cloudinary");
+
+exports.uploadAvatar = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "No file uploaded" });
+    }
+
+    const result = await cloudinary.uploader.upload_stream(
+      {
+        folder: "avatars",
+        resource_type: "image",
+        public_id: `student_${req.student._id}_${Date.now()}`,
+      },
+      async (error, result) => {
+        if (error)
+          return res
+            .status(500)
+            .json({ status: "fail", message: error.message });
+
+        req.student.avatar = result.secure_url;
+        await req.student.save();
+
+        res.status(200).json({ status: "success", url: result.secure_url });
+      }
+    );
+
+    require("streamifier").createReadStream(req.file.buffer).pipe(result);
+  } catch (err) {
+    res.status(500).json({ status: "fail", message: err.message });
   }
 };

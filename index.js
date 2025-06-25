@@ -187,7 +187,14 @@ process.on("uncaughtException", (err) => {
     process.exit(1);
   });
 });
-
+// Custom error handler for development
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    status: 'error',
+    message: 'Something went wrong!'
+  });
+});
 // Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("SIGTERM RECEIVED. Shutting down gracefully");

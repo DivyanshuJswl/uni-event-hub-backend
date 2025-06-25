@@ -1,102 +1,107 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-
-const StudentSchema = new mongoose.Schema(
+const EventSchema = new mongoose.Schema(
   {
-    name: {
+    title: {
       type: String,
-      required: [true, "Please provide a name"],
+      required: [true, "Event title is required"],
       trim: true,
-      maxlength: [50, "Name cannot exceed 50 characters"],
+      maxlength: [100, "Title cannot exceed 100 characters"],
     },
-    year: {
-      type: Number,
-      required: [true, "Please specify your academic year"],
-      min: [1, "Year must be at least 1"],
-      max: [5, "Year cannot exceed 5"],
-    },
-    googleId: {
+    description: {
       type: String,
-      unique: true,
-      sparse: true
+      required: true,
+      maxlength: [500, "Description cannot exceed 500 characters"],
     },
-    avatar: String,
-    isVerified: {
-      type: Boolean,
-      default: false
-    },
-    tokens: {
-      type: [
-        {
-          token: {
-            type: String,
-            required: true,
-          },
-          createdAt: {
-            type: Date,
-            default: Date.now,
-          },
-        },
-      ],
-      default: [], // Add this to initialize as empty array
-    },
-    email: {
-      type: String,
-      required: [true, "Please provide an email"],
-      unique: true,
-      trim: true,
-      lowercase: true,
-      match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-        "Please provide a valid email",
-      ],
-    },
-    password: {
-      type: String,
-      required: function () {
-        // Only require password if not using Google login
-        return !this.googleId;
-      },
-      minlength: [8, "Password must be at least 8 characters"],
-      select: false,
-    },
-    branch: {
-      type: String,
-      required: [true, "Please specify your branch"],
-      enum: ["CSE", "ECE", "EEE", "ME", "CE", "IT"],
-      uppercase: true,
-    },
-    // Add this to your schema definition
-    metaMaskAddress: {
-      type: String,
+    date: {
+      type: Date,
+      required: [true, "Event date is required"],
       validate: {
-        validator: function (v) {
-          return v ? /^0x[a-fA-F0-9]{40}$/.test(v) : true;
+        validator: function (value) {
+          return value > Date.now() - 60000; // 1 minute buffer
         },
-        message: (props) => `${props.value} is not a valid Ethereum address!`,
+        message: "Event date must be at least 1 minute in the future",
       },
-      trim: true,
-      lowercase: true,
     },
-    role: {
+    location: {
       type: String,
-      enum: ["participant", "organizer", "admin"],
-      default: "participant",
+      required: [true, "Location is required"],
+      trim: true,
     },
-    enrolledEvents: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Event",
-      },
-    ],
-    passwordChangedAt: Date,
-    passwordResetToken: String,
-    passwordResetExpires: Date,
-    active: {
+    maxParticipants: {
+      type: Number,
+      min: [1, "At least 1 participant required"],
+      default: 50,
+    },
+    category: {
+      type: String,
+      enum: [
+        "workshop",
+        "seminar",
+        "social",
+        "hackathon",
+        "cultural",
+        "technology",
+      ],
+      lowercase: true,
+      required: true,
+    },
+    eventURL: {
+      type: String,
+      trim: true,
+    },
+    enableRegistration: {
       type: Boolean,
       default: true,
-      select: false,
+    },
+    digitalCertificates: {
+      type: Boolean,
+      default: false,
+    },
+    sendReminders: {
+      type: Boolean,
+      default: false,
+    },
+    organizer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Student",
+      required: true,
+    },
+    participants: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Student",
+      },
+    ],
+    status: {
+      type: String,
+      enum: ["upcoming", "ongoing", "completed", "cancelled"],
+      default: "upcoming",
+    },
+    images: [
+      {
+        url: {
+          type: String,
+          required: true,
+        },
+        publicId: String,
+        width: Number,
+        height: Number,
+        format: String,
+        bytes: Number,
+        isFeatured: {
+          type: Boolean,
+          default: false,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    imageUrl: {
+      type: String,
     },
   },
   {
@@ -166,4 +171,5 @@ StudentSchema.methods.upgradeToOrganizer = function () {
   this.role = "organizer";
   return this.save();
 };
-module.exports =mongoose.models.Student || mongoose.model("Student", StudentSchema);
+module.exports =
+  mongoose.models.Student || mongoose.model("Student", StudentSchema);
