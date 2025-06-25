@@ -55,7 +55,7 @@ exports.createEvent = async (req, res) => {
 exports.updateEvent = async (req, res) => {
   try {
     const eventId = req.params.eventId || req.params.id;
-   const event = await Event.findOneAndUpdate(
+    const event = await Event.findOneAndUpdate(
       {
         _id: eventId,
         organizer: req.student._id,
@@ -65,10 +65,11 @@ exports.updateEvent = async (req, res) => {
         new: true,
         runValidators: true,
       }
-    ).populate("organizer", "name email")
-     .populate("participants", "name email year branch");
+    )
+      .populate("organizer", "name email")
+      .populate("participants", "name email year branch");
 
-     if (!event) {
+    if (!event) {
       // Return proper 404 if event not found
       return res.status(404).json({
         status: "fail",
@@ -80,8 +81,8 @@ exports.updateEvent = async (req, res) => {
     res.status(200).json({
       status: "success",
       data: {
-        event
-      }
+        event,
+      },
     });
   } catch (err) {
     next(err); // Pass to error handler middleware
@@ -416,7 +417,7 @@ exports.uploadEventImage = async (req, res) => {
         .json({ status: "fail", message: "No file uploaded" });
     }
 
-    // Upload to Cloudinary using a Promise
+    // Upload to Cloudinary
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
@@ -432,19 +433,80 @@ exports.uploadEventImage = async (req, res) => {
       streamifier.createReadStream(req.file.buffer).pipe(stream);
     });
 
-    // Use req.event from checkEventExists
-    const event = req.event;
-    await event.addImage({
+    // Get current event to check if it's the first image
+    const currentEvent = await Event.findById(req.params.eventId);
+    const isFirstImage =
+      !currentEvent.images || currentEvent.images.length === 0;
+
+    // Prepare image data
+    const imageData = {
       url: result.secure_url,
       publicId: result.public_id,
       width: result.width,
       height: result.height,
       format: result.format,
       bytes: result.bytes,
-      isFeatured: event.images.length === 0, // First image is featured
+      isFeatured: isFirstImage,
+    };
+
+    // Update both images array and featuredImage if it's the first image
+    const update = {
+      $push: { images: imageData },
+    };
+
+    if (isFirstImage) {
+      update.featuredImage = imageData;
+    }
+
+    const event = await Event.findByIdAndUpdate(req.params.eventId, update, {
+      new: true,
     });
 
-    res.status(200).json({ status: "success", url: result.secure_url });
+    if (!event) {
+      return res
+        .status(404)
+        .json({ status: "fail", message: "Event not found" });
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        url: result.secure_url,
+        event,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ status: "fail", message: err.message });
+  }
+};
+
+exports.setFeaturedImage = async (req, res) => {
+  try {
+    const { imageId } = req.body;
+    
+    // Find the image in the event's images array
+    const event = await Event.findById(req.params.eventId);
+    const imageToFeature = event.images.find(img => img._id.equals(imageId));
+    
+    if (!imageToFeature) {
+      return res.status(404).json({ status: "fail", message: "Image not found" });
+    }
+    
+    // Update both featuredImage and isFeatured flags
+    const updatedEvent = await Event.findByIdAndUpdate(
+      req.params.eventId,
+      {
+        featuredImage: imageToFeature,
+        $set: { "images.$[].isFeatured": false }, // Reset all flags
+        $set: { "images.$[elem].isFeatured": true } // Set new featured
+      },
+      {
+        new: true,
+        arrayFilters: [{ "elem._id": imageId }]
+      }
+    );
+    
+    res.status(200).json({ status: "success", data: { event: updatedEvent } });
   } catch (err) {
     res.status(500).json({ status: "fail", message: err.message });
   }
