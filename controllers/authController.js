@@ -207,38 +207,57 @@ exports.updatePassword = async (req, res, next) => {
     next(err);
   }
 };
-
+const streamifier = require("streamifier");
 const cloudinary = require("../config/cloudinary");
-
-exports.uploadAvatar = async (req, res) => {
+// @desc    Upload student avatar
+// @route   PUT /api/students/upload-avatar
+// @access  Private
+exports.uploadAvatar = async (req, res, next) => {
   try {
     if (!req.file) {
-      return res
-        .status(400)
-        .json({ status: "fail", message: "No file uploaded" });
+      return next(new AppError("No image file provided", 400));
     }
 
-    const result = await cloudinary.uploader.upload_stream(
-      {
-        folder: "avatars",
-        resource_type: "image",
-        public_id: `student_${req.student._id}_${Date.now()}`,
+    // Delete old avatar if exists
+    if (req.student.avatar?.publicId) {
+      await cloudinary.uploader.destroy(req.student.avatar.publicId);
+    }
+
+    // Upload new avatar
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: "avatars",
+          resource_type: "image",
+          public_id: `student_${req.student._id}_${Date.now()}`,
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      streamifier.createReadStream(req.file.buffer).pipe(stream);
+    });
+
+    // Update student avatar
+    req.student.avatar = {
+      url: result.secure_url,
+      publicId: result.public_id,
+      width: result.width,
+      height: result.height,
+      format: result.format,
+      bytes: result.bytes,
+    };
+
+    await req.student.save();
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        avatar: req.student.avatar,
       },
-      async (error, result) => {
-        if (error)
-          return res
-            .status(500)
-            .json({ status: "fail", message: error.message });
-
-        req.student.avatar = result.secure_url;
-        await req.student.save();
-
-        res.status(200).json({ status: "success", url: result.secure_url });
-      }
-    );
-
-    require("streamifier").createReadStream(req.file.buffer).pipe(result);
+    });
   } catch (err) {
-    res.status(500).json({ status: "fail", message: err.message });
+    next(err);
   }
 };

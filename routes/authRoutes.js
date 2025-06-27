@@ -16,6 +16,15 @@ router.post('/google', oauthController.googleLogin);
 // @access  Public
 router.post('/login', authController.login);
 
+const upload = require('../middleware/upload');
+
+router.put(
+  '/upload-avatar',
+  authMiddleware.protect,
+  upload.single('avatar'),
+  authController.uploadAvatar
+);
+
 // @desc    Logout student
 // @route   GET /api/auth/logout
 // @access  Private
