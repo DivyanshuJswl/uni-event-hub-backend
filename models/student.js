@@ -19,23 +19,12 @@ const StudentSchema = new mongoose.Schema(
     googleId: {
       type: String,
       unique: true,
-      sparse: true,
+      sparse: true
     },
-    avatar: {
-      url: String,
-      publicId: String,
-      width: Number,
-      height: Number,
-      format: String,
-      bytes: Number,
-      createdAt: {
-        type: Date,
-        default: Date.now,
-      },
-    },
+    avatar: String,
     isVerified: {
       type: Boolean,
-      default: false,
+      default: false
     },
     tokens: {
       type: [
@@ -177,5 +166,4 @@ StudentSchema.methods.upgradeToOrganizer = function () {
   this.role = "organizer";
   return this.save();
 };
-module.exports =
-  mongoose.models.Student || mongoose.model("Student", StudentSchema);
+module.exports =mongoose.models.Student || mongoose.model("Student", StudentSchema);
