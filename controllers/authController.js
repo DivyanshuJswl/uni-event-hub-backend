@@ -2,6 +2,7 @@ const Student = require("../models/student");
 const jwt = require("jsonwebtoken");
 const { promisify } = require("util");
 const AppError = require("../utils/appError");
+import axios from "axios";
 
 // Utility function to sign JWT tokens
 const signToken = (id) => {
@@ -77,19 +78,41 @@ exports.signup = async (req, res, next) => {
   }
 };
 
+// @desc    Verify hCaptcha token
+async function verifyCaptcha(token) {
+  try {
+    const response = await axios.post(
+      "https://hcaptcha.com/siteverify",
+      new URLSearchParams({
+        secret: process.env.HCAPTCHA_SECRET_KEY,
+        response: token,
+      }),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+    return response.data.success;
+  } catch (error) {
+    console.error("Captcha verification failed:", error);
+    return false;
+  }
+}
+
 // @desc    Login student
 // @route   POST /api/auth/login
 // @access  Public
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-
-    // 1) Check if email and password exist
+    const { email, password, captchaToken } = req.body;
+    // 1) Validate captcha token if provided
+    if (!(await verifyCaptcha(captchaToken))) {
+      return res.status(400).json({ message: "Captcha verification failed" });
+    }
+    
+    // 2) Check if email and password exist
     if (!email || !password) {
       return next(new AppError("Please provide email and password", 400));
     }
 
-    // 2) Check if student exists and password is correct
+    // 3) Check if student exists and password is correct
     const student = await Student.findOne({ email, active: true }).select(
       "+password"
     );
