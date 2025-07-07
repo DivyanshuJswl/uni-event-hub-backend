@@ -1,8 +1,7 @@
 const Student = require("../models/student");
 const jwt = require("jsonwebtoken");
-const { promisify } = require("util");
 const AppError = require("../utils/appError");
-import axios from "axios";
+const axios = require("axios");
 
 // Utility function to sign JWT tokens
 const signToken = (id) => {
