@@ -55,6 +55,7 @@ const authLimiter = rateLimit({
 app.use("/api", apiLimiter);
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/signup", authLimiter);
+
 // Body parser, reading data from body into req.body
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
@@ -71,15 +72,35 @@ app.use(
   })
 );
 
-// Enable CORS
+// Enhanced CORS configuration
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  "http://localhost:3000",
+  "https://uni-event-hub-frontend.vercel.app",
+].filter(Boolean); // Remove any undefined values
+
 app.use(
   cors({
-    origin: [process.env.CLIENT_URL, "http://localhost:3000"], // Array of allowed origins
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    exposedHeaders: ["Authorization"],
+    maxAge: 86400 // 24 hours
   })
 );
+
+// Handle preflight requests
+app.options("*", cors());
 
 // Serve static files
 app.use(
@@ -94,10 +115,13 @@ app.use(
 );
 
 // Debugging middleware
-app.use((req, res, next) => {
-  console.log(`Incoming ${req.method} request for ${req.originalUrl}`);
-  next();
-});
+if (process.env.NODE_ENV === "development") {
+  app.use((req, res, next) => {
+    console.log(`Incoming ${req.method} request for ${req.originalUrl}`);
+    console.log("Headers:", req.headers);
+    next();
+  });
+}
 
 // ===== DATABASE CONNECTION =====
 connectDB();
@@ -127,6 +151,14 @@ app.get("/api/tech-news", async (req, res) => {
     console.error("Error fetching news:", err.message);
     res.status(500).json({ error: "Failed to fetch news" });
   }
+});
+
+// home route
+app.get("/", (req, res) => {
+  res.status(200).json({
+    message: "Welcome to Uni Event Hub API",
+    version: "1.0.0",
+  });
 });
 
 // Health check endpoint
@@ -159,6 +191,7 @@ app.use(globalErrorHandler);
 const port = process.env.PORT || 7000;
 const server = app.listen(port, () => {
   console.log(`Server running on port ${port} in ${process.env.NODE_ENV} mode`);
+  console.log("Allowed origins:", allowedOrigins);
   console.log("Available routes:");
   console.log("- POST /api/auth/signup");
   console.log("- POST /api/auth/login");
@@ -187,14 +220,7 @@ process.on("uncaughtException", (err) => {
     process.exit(1);
   });
 });
-// Custom error handler for development
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    status: 'error',
-    message: 'Something went wrong!'
-  });
-});
+
 // Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("SIGTERM RECEIVED. Shutting down gracefully");
