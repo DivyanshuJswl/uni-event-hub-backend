@@ -77,6 +77,7 @@ const allowedOrigins = [
   process.env.CLIENT_URL,
   "http://localhost:3000",
   "https://uni-event-hub-frontend.vercel.app",
+  "https://uni-event-oauth.el.r.appspot.com",
 ].filter(Boolean); // Remove any undefined values
 
 app.use(
