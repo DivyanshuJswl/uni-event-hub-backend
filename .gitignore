@@ -20,3 +20,4 @@ CHANGELOG.md
 
 # Ignore VS Code settings (optional)
 .vscode/
+.vercel
