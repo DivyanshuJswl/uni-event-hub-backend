@@ -78,7 +78,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "https://uni-event-hub-frontend.vercel.app",
   "https://uni-event-oauth.el.r.appspot.com",
-  "https://uni-event.shop",
+  "https://www.uni-event.shop",
 ].filter(Boolean); // Remove any undefined values
 
 app.use(
