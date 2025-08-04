@@ -78,6 +78,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "https://uni-event-hub-frontend.vercel.app",
   "https://uni-event-oauth.el.r.appspot.com",
+  "https://uni-event.shop",
 ].filter(Boolean); // Remove any undefined values
 
 app.use(
@@ -85,7 +86,7 @@ app.use(
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
-      
+
       if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
       } else {
@@ -96,7 +97,7 @@ app.use(
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     exposedHeaders: ["Authorization"],
-    maxAge: 86400 // 24 hours
+    maxAge: 86400, // 24 hours
   })
 );
 
@@ -129,6 +130,7 @@ connectDB();
 
 mongoose.connection.on("connected", () => {
   console.log("Mongoose connected to DB");
+
 });
 
 mongoose.connection.on("error", (err) => {
@@ -168,9 +170,13 @@ app.get("/api/health", (req, res) => {
     status: "healthy",
     timestamp: new Date(),
     uptime: process.uptime(),
-    database:
+    database: [
       mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-    routes: [
+      mongoose.connection.host,
+      // get database name from connection string
+      mongoose.connection.name || "unknown",
+    ],
+      routes: [
       "/api/auth",
       "/api/events",
       "/api/wallet",
