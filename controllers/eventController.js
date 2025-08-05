@@ -117,6 +117,175 @@ exports.getAllEvents = async (req, res) => {
   }
 };
 
+exports.getRecentEvents = async (req, res) => {
+  try {
+    // Get the limit from query params or default to 3
+    const limit = parseInt(req.query.limit) || 3;
+
+    const student = await Student.findById(req.student._id);
+
+    const features = new APIFeatures(
+      Event.find({ _id: { $in: student.enrolledEvents } }),
+      {
+        sort: "-startDate", // Sort by newest first
+        limit: limit, // Use the limit from frontend
+      }
+    )
+      .sort()
+      .limitFields()
+      .paginate();
+
+    const events = await features.query
+      .populate("organizer", "name email")
+      .populate({
+        path: "participants",
+        select: "name",
+        options: { limit: 3 }, // Only get first 3 participants
+      });
+
+    res.status(200).json({
+      status: "success",
+      results: events.length,
+      data: {
+        events,
+      },
+    });
+  } catch (err) {
+    res.status(404).json({
+      status: "fail",
+      message: err.message,
+    });
+  }
+};
+
+exports.getPopularEvents = async (req, res) => {
+  try {
+    const student = await Student.findById(req.student._id);
+
+    // First get the count of participants for each event
+    const events = await Event.aggregate([
+      { $match: { _id: { $in: student.enrolledEvents } } },
+      { $addFields: { participantsCount: { $size: "$participants" } } },
+      { $sort: { participantsCount: -1 } },
+      { $limit: req.query.limit || 3 },
+      {
+        $lookup: {
+          from: "students",
+          localField: "organizer",
+          foreignField: "_id",
+          as: "organizer",
+        },
+      },
+      { $unwind: "$organizer" },
+      {
+        $project: {
+          title: 1,
+          description: 1,
+          startDate: 1,
+          endDate: 1,
+          participantsCount: 1,
+          organizer: { name: 1, email: 1 },
+        },
+      },
+    ]);
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        events,
+      },
+    });
+  } catch (err) {
+    res.status(404).json({
+      status: "fail",
+      message: err.message,
+    });
+  }
+};
+
+exports.getUpcomingEvents = async (req, res) => {
+  try {
+    const student = await Student.findById(req.student._id);
+    const currentDate = new Date();
+
+    const features = new APIFeatures(
+      Event.find({
+        _id: { $in: student.enrolledEvents },
+        startDate: { $gt: currentDate },
+      }),
+      req.query
+    )
+      .filter()
+      .sort()
+      .limitFields()
+      .paginate();
+
+    const events = await features.query.populate("organizer", "name email");
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        events,
+      },
+    });
+  } catch (err) {
+    res.status(404).json({
+      status: "fail",
+      message: err.message,
+    });
+  }
+};
+
+// @desc    Get all events a student is enrolled in
+// @route   GET /api/students/:studentId/events
+// @access  Private (student can only access their own events)
+exports.getStudentEvents = async (req, res) => {
+  try {    
+    // Verify student is accessing their own data
+    if (req.params.studentId !== req.student._id.toString()) {
+      return res.status(403).json({
+        status: "fail",
+        message: "Unauthorized access",
+      });
+    }
+
+    const student = await Student.findById(req.params.studentId)
+      .select('enrolledEvents');
+      
+    if (!student) {
+      return res.status(404).json({
+        status: "fail",
+        message: "Student not found",
+      });
+    }
+
+    // Create base query
+    const baseQuery = Event.find({ _id: { $in: student.enrolledEvents } });
+
+    // Apply APIFeatures
+    const features = new APIFeatures(baseQuery, req.query)
+      .filter()
+      .sort()
+      .limitFields()
+      .paginate();
+
+    const events = await features.query.populate("organizer", "name email");
+    
+    res.status(200).json({
+      status: "success",
+      results: events.length,
+      data: {
+        events,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
+  }
+};
+
 // @desc    Get single event details
 // @route   GET /api/events/:eventId
 // @access  Public
@@ -483,29 +652,31 @@ exports.uploadEventImage = async (req, res) => {
 exports.setFeaturedImage = async (req, res) => {
   try {
     const { imageId } = req.body;
-    
+
     // Find the image in the event's images array
     const event = await Event.findById(req.params.eventId);
-    const imageToFeature = event.images.find(img => img._id.equals(imageId));
-    
+    const imageToFeature = event.images.find((img) => img._id.equals(imageId));
+
     if (!imageToFeature) {
-      return res.status(404).json({ status: "fail", message: "Image not found" });
+      return res
+        .status(404)
+        .json({ status: "fail", message: "Image not found" });
     }
-    
+
     // Update both featuredImage and isFeatured flags
     const updatedEvent = await Event.findByIdAndUpdate(
       req.params.eventId,
       {
         featuredImage: imageToFeature,
         $set: { "images.$[].isFeatured": false }, // Reset all flags
-        $set: { "images.$[elem].isFeatured": true } // Set new featured
+        $set: { "images.$[elem].isFeatured": true }, // Set new featured
       },
       {
         new: true,
-        arrayFilters: [{ "elem._id": imageId }]
+        arrayFilters: [{ "elem._id": imageId }],
       }
     );
-    
+
     res.status(200).json({ status: "success", data: { event: updatedEvent } });
   } catch (err) {
     res.status(500).json({ status: "fail", message: err.message });

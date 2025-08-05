@@ -38,6 +38,31 @@ router.post(
   eventController.unenrollFromEvent
 );
 
+// Get recent events
+router.get(
+  "/recent-events",
+  authMiddleware.restrictTo("participant"),
+  eventController.getRecentEvents
+);
+// Get popular events
+router.get(
+  "/popular-events",
+  authMiddleware.restrictTo("participant"),
+  eventController.getPopularEvents
+);
+// Get upcoming events
+router.get(
+  "/upcoming-events",
+  authMiddleware.restrictTo("participant"),
+  eventController.getUpcomingEvents
+);
+// Get all events a student is enrolled in
+router.get(
+  "/students/:studentId",
+  authMiddleware.restrictTo("participant"),
+  eventController.getStudentEvents
+);
+
 // Organizer-specific routes
 router.use(authMiddleware.restrictTo("organizer"));
 
