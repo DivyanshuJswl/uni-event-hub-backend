@@ -19,9 +19,9 @@ const signToken = (student) => {
     createdAt: student.createdAt,
     updatedAt: student.updatedAt,
     googleId: student.googleId,
-    avatar: student.avatar
+    avatar: student.avatar,
   };
-  
+
   return jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN,
   });
@@ -31,7 +31,6 @@ const signToken = (student) => {
 const sendTokenResponse = (student, token, statusCode, res) => {
   // Create safe response object without sensitive data
   const studentResponse = {
-    _id: student._id,
     id: student._id.toString(),
     name: student.name,
     year: student.year,
@@ -43,16 +42,17 @@ const sendTokenResponse = (student, token, statusCode, res) => {
     createdAt: student.createdAt,
     updatedAt: student.updatedAt,
     googleId: student.googleId,
-    avatar: student.avatar
+    avatar: student.avatar,
   };
 
   console.log(`Token generated for student ${student.email}: ${token}`);
-  
+
   res.status(statusCode).json({
-    status: "success",
+    status: true,
     token,
     data: {
       student: studentResponse,
+      role: student.role,
     },
   });
 };
@@ -107,10 +107,14 @@ async function verifyCaptcha(token) {
 // @access  Public
 exports.signup = async (req, res, next) => {
   try {
-    const { name, year, email, password, branch, role, captchaToken } = req.body;
+    const { name, year, email, password, branch, role, captchaToken } =
+      req.body;
 
     // 1) Validate captcha token if provided and required
-    if (process.env.REQUIRE_CAPTCHA === 'true' && !(await verifyCaptcha(captchaToken))) {
+    if (
+      process.env.REQUIRE_CAPTCHA === "true" &&
+      !(await verifyCaptcha(captchaToken))
+    ) {
       return res.status(400).json({ message: "Captcha verification failed" });
     }
 
@@ -145,7 +149,10 @@ exports.login = async (req, res, next) => {
     const { email, password, captchaToken } = req.body;
 
     // 1) Validate captcha token if provided and required
-    if (process.env.REQUIRE_CAPTCHA === 'true' && !(await verifyCaptcha(captchaToken))) {
+    if (
+      process.env.REQUIRE_CAPTCHA === "true" &&
+      !(await verifyCaptcha(captchaToken))
+    ) {
       return res.status(400).json({ message: "Captcha verification failed" });
     }
 
@@ -155,7 +162,9 @@ exports.login = async (req, res, next) => {
     }
 
     // 3) Check if student exists and password is correct
-    const student = await Student.findOne({ email, active: true }).select("+password");
+    const student = await Student.findOne({ email, active: true }).select(
+      "+password"
+    );
 
     if (!student) {
       return next(new AppError("Incorrect email or password", 401));
@@ -163,7 +172,9 @@ exports.login = async (req, res, next) => {
 
     // Check if this is a Google account trying to use password login
     if (student.googleId) {
-      return next(new AppError("Please use Google login for this account", 401));
+      return next(
+        new AppError("Please use Google login for this account", 401)
+      );
     }
 
     // Verify password
@@ -188,7 +199,7 @@ const verifyToken = (token) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     return decoded;
   } catch (error) {
-    console.error('Error verifying token:', error.message);
+    console.error("Error verifying token:", error.message);
     return null;
   }
 };
@@ -196,12 +207,12 @@ const verifyToken = (token) => {
 // Updated logout function using token decoding
 exports.logout = async (req, res, next) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    
+    const token = req.headers.authorization?.replace("Bearer ", "");
+
     if (!token) {
       return res.status(400).json({
         status: "fail",
-        message: "No token provided"
+        message: "No token provided",
       });
     }
 
@@ -210,34 +221,36 @@ exports.logout = async (req, res, next) => {
     if (!decoded) {
       return res.status(401).json({
         status: "fail",
-        message: "Invalid token"
+        message: "Invalid token",
       });
     }
 
     const userId = decoded._id || decoded.id;
     const student = await Student.findById(userId);
-    
+
     if (!student) {
       return res.status(404).json({
         status: "fail",
-        message: "User not found"
+        message: "User not found",
       });
     }
 
     // Remove the current token from tokens array
-    student.tokens = student.tokens.filter(tokenObj => tokenObj.token !== token);
-    
+    student.tokens = student.tokens.filter(
+      (tokenObj) => tokenObj.token !== token
+    );
+
     await student.save({ validateBeforeSave: false });
 
     res.status(200).json({
       status: "success",
-      message: "Logged out successfully"
+      message: "Logged out successfully",
     });
 
   } catch (err) {
     res.status(500).json({
       status: "error",
-      message: "Error during logout"
+      message: "Error during logout",
     });
   }
 };
@@ -248,7 +261,7 @@ exports.logout = async (req, res, next) => {
 exports.getMe = async (req, res, next) => {
   try {
     const student = await Student.findById(req.user._id);
-    
+
     if (!student) {
       return next(new AppError("User not found", 404));
     }
@@ -265,7 +278,7 @@ exports.getMe = async (req, res, next) => {
 exports.updateMe = async (req, res, next) => {
   try {
     const { name, year, branch } = req.body;
-    
+
     // Filter allowed fields to update
     const filteredBody = {};
     if (name) filteredBody.name = name;
@@ -294,7 +307,7 @@ exports.updateMe = async (req, res, next) => {
 exports.changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    
+
     if (!currentPassword || !newPassword) {
       return next(new AppError("Please provide current and new password", 400));
     }

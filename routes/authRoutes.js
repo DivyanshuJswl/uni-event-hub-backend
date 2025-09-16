@@ -24,14 +24,7 @@ router.post('/logout', authMiddleware.protect, authController.logout);
 // @desc    Get current logged-in student
 // @route   GET /api/auth/me
 // @access  Private
-router.get('/me', authMiddleware.protect, (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    data: {
-      student: req.student
-    }
-  });
-});
+router.get('/me', authMiddleware.protect, authController.getMe);
 
 // @desc    Update student details
 // @route   PUT /api/auth/update-me
