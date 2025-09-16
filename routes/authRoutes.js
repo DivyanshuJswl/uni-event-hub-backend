@@ -19,7 +19,7 @@ router.post('/login', authController.login);
 // @desc    Logout student
 // @route   GET /api/auth/logout
 // @access  Private
-router.get('/logout', authMiddleware.protect, authController.logout);
+router.post('/logout', authMiddleware.protect, authController.logout);
 
 // @desc    Get current logged-in student
 // @route   GET /api/auth/me
