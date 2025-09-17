@@ -20,6 +20,7 @@ const signToken = (student) => {
     updatedAt: student.updatedAt,
     googleId: student.googleId,
     avatar: student.avatar,
+    metaMaskAddress: student.metaMaskAddress,
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {
@@ -43,6 +44,7 @@ const sendTokenResponse = (student, token, statusCode, res) => {
     updatedAt: student.updatedAt,
     googleId: student.googleId,
     avatar: student.avatar,
+    metaMaskAddress: student.metaMaskAddress,
   };
 
   console.log(`Token generated for student ${student.email}: ${token}`);
@@ -50,10 +52,8 @@ const sendTokenResponse = (student, token, statusCode, res) => {
   res.status(statusCode).json({
     status: true,
     token,
-    data: {
-      student: studentResponse,
-      role: student.role,
-    },
+    student: studentResponse,
+    role: student.role,
   });
 };
 
@@ -246,7 +246,6 @@ exports.logout = async (req, res, next) => {
       status: "success",
       message: "Logged out successfully",
     });
-
   } catch (err) {
     res.status(500).json({
       status: "error",
