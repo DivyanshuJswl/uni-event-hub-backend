@@ -56,6 +56,7 @@ router.get(
   authMiddleware.restrictTo("participant"),
   eventController.getUpcomingEvents
 );
+
 // Get all events a student is enrolled in
 router.get(
   "/students/:studentId",

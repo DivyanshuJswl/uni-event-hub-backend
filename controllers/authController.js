@@ -260,7 +260,7 @@ exports.logout = async (req, res, next) => {
 // @access  Private
 exports.getMe = async (req, res, next) => {
   try {
-    const student = await Student.findById(req.user._id);
+    const student = await Student.findById(req.student._id);
 
     if (!student) {
       return next(new AppError("User not found", 404));
@@ -286,7 +286,7 @@ exports.updateMe = async (req, res, next) => {
     if (branch) filteredBody.branch = branch;
 
     const student = await Student.findByIdAndUpdate(
-      req.user._id,
+      req.student._id,
       filteredBody,
       { new: true, runValidators: true }
     );
@@ -312,7 +312,7 @@ exports.changePassword = async (req, res, next) => {
       return next(new AppError("Please provide current and new password", 400));
     }
 
-    const student = await Student.findById(req.user._id).select("+password");
+    const student = await Student.findById(req.student._id).select("+password");
 
     if (!(await student.correctPassword(currentPassword))) {
       return next(new AppError("Current password is incorrect", 401));
@@ -421,7 +421,7 @@ exports.uploadAvatar = async (req, res) => {
         .json({ status: "fail", message: "No file uploaded" });
     }
 
-    const result = await cloudinary.uploader.upload_stream(
+    const result = cloudinary.uploader.upload_stream(
       {
         folder: "avatars",
         resource_type: "image",

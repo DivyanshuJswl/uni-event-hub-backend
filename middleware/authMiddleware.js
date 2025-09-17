@@ -59,7 +59,7 @@ module.exports = {
         }
 
         // Add student to request object
-        req.user = student;
+        req.student = student;
         req.token = token;
         next();
       } catch (error) {
