@@ -1,10 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const eventController = require("../controllers/eventController");
-const authController = require("../controllers/authController");
 const authMiddleware = require("../middleware/authMiddleware");
 const { checkEventExists } = require("../middleware/eventMiddleware");
-const upload = require("../middleware/upload");
+const { uploadImage } = require("../middleware/uploadMiddleware");
 
 // Public routes (no authentication required)
 router.get("/", eventController.getAllEvents);
@@ -19,7 +18,7 @@ router.post(
   "/:eventId/upload-image",
   authMiddleware.restrictTo("organizer"),
   checkEventExists,
-  upload.single("image"),
+  uploadImage.single("image"),
   eventController.uploadEventImage
 );
 

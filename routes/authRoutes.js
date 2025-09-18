@@ -3,7 +3,7 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const oauthController = require('../controllers/oauthController');
 const authMiddleware = require('../middleware/authMiddleware');
-
+const { uploadImage } = require('../middleware/uploadMiddleware');
 // @desc    Register new student
 // @route   POST /api/auth/signup
 // @access  Public
@@ -30,6 +30,20 @@ router.get('/me', authMiddleware.protect, authController.getMe);
 // @route   PUT /api/auth/update-me
 // @access  Private
 router.put('/update-me', authMiddleware.protect, authController.updateMe);
+
+// Avatar upload route
+router.patch(
+  '/avatar',
+  authMiddleware.protect,
+  uploadImage.single('avatar'),
+  authController.uploadAvatar
+);
+
+router.delete(
+  '/avatar',
+  authMiddleware.protect,
+  authController.deleteAvatar
+);
 
 // @desc    Delete student account
 // @route   DELETE /api/auth/delete-me

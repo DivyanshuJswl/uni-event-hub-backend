@@ -410,37 +410,81 @@ exports.updatePassword = async (req, res, next) => {
   }
 };
 
-const cloudinary = require("../config/cloudinary");
+const cloudinary = require('../config/cloudinary');
+const streamifier = require('streamifier');
 
-exports.uploadAvatar = async (req, res) => {
+// @desc    Upload avatar for student
+// @route   PATCH /api/user/avatar
+// @access  Private
+exports.uploadAvatar = async (req, res, next) => {
   try {
+    // Check if file exists
     if (!req.file) {
-      return res
-        .status(400)
-        .json({ status: "fail", message: "No file uploaded" });
+      return next(new AppError('Please upload an image file', 400));
     }
 
-    const result = cloudinary.uploader.upload_stream(
-      {
-        folder: "avatars",
-        resource_type: "image",
-        public_id: `student_${req.student._id}_${Date.now()}`,
-      },
-      async (error, result) => {
-        if (error)
-          return res
-            .status(500)
-            .json({ status: "fail", message: error.message });
+    // Check file size (additional validation)
+    if (req.file.size > 5 * 1024 * 1024) {
+      return next(new AppError('File size too large. Maximum 5MB allowed.', 400));
+    }
 
-        req.student.avatar = result.secure_url;
-        await req.student.save();
+    // Upload to Cloudinary using promise-based approach
+    const uploadPromise = new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'avatars',
+          resource_type: 'image',
+          public_id: `student_${req.student._id}_${Date.now()}`,
+          transformation: [
+            { width: 500, height: 500, crop: 'limit' },
+            { quality: 'auto' },
+            { format: 'auto' }
+          ]
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
 
-        res.status(200).json({ status: "success", url: result.secure_url });
-      }
+      // Pipe the file buffer to Cloudinary
+      streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
+    });
+
+    // Wait for the upload to complete
+    const result = await uploadPromise;
+
+    // Update student's avatar in database
+    await Student.findByIdAndUpdate(
+      req.student._id,
+      { avatar: result.secure_url },
+      { new: true, runValidators: true }
     );
 
-    require("streamifier").createReadStream(req.file.buffer).pipe(result);
+    res.status(200).json({
+      status: 'success',
+      message: 'Avatar uploaded successfully',
+      avatarUrl: result.secure_url
+    });
   } catch (err) {
-    res.status(500).json({ status: "fail", message: err.message });
+    next(new AppError('Error uploading avatar: ' + err.message, 500));
+  }
+};
+
+exports.deleteAvatar = async (req, res, next) => {
+  try {
+    // Set avatar to null or default
+    await Student.findByIdAndUpdate(
+      req.student._id,
+      { avatar: null },
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Avatar removed successfully'
+    });
+  } catch (err) {
+    next(new AppError('Error removing avatar: ' + err.message, 500));
   }
 };

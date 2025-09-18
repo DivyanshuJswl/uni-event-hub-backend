@@ -1,5 +1,4 @@
 const jwt = require("jsonwebtoken");
-const { promisify } = require("util");
 const Student = require("../models/student");
 const Event = require("../models/event");
 
