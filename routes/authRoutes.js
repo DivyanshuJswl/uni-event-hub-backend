@@ -29,7 +29,7 @@ router.get('/me', authMiddleware.protect, authController.getMe);
 // @desc    Update student details
 // @route   PUT /api/auth/update-me
 // @access  Private
-router.put('/update-me', authMiddleware.protect, authController.updateMe);
+router.patch('/update-me', authMiddleware.protect, authController.updateMe);
 
 // Avatar upload route
 router.patch(

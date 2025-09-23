@@ -271,35 +271,6 @@ exports.getMe = async (req, res, next) => {
   }
 };
 
-// @desc    Update current user profile
-// @route   PATCH /api/auth/update-me
-// @access  Private
-exports.updateMe = async (req, res, next) => {
-  try {
-    const { name, year, branch } = req.body;
-
-    // Filter allowed fields to update
-    const filteredBody = {};
-    if (name) filteredBody.name = name;
-    if (year) filteredBody.year = year;
-    if (branch) filteredBody.branch = branch;
-
-    const student = await Student.findByIdAndUpdate(
-      req.student._id,
-      filteredBody,
-      { new: true, runValidators: true }
-    );
-
-    if (!student) {
-      return next(new AppError("User not found", 404));
-    }
-
-    sendTokenResponse(student, req.token, 200, res);
-  } catch (err) {
-    next(err);
-  }
-};
-
 // @desc    Change password
 // @route   PATCH /api/auth/change-password
 // @access  Private
@@ -327,48 +298,80 @@ exports.changePassword = async (req, res, next) => {
   }
 };
 
-// // @desc    Update current student details
-// // @route   PUT /api/auth/update-me
-// // @access  Private
-// exports.updateMe = async (req, res, next) => {
-//   try {
-//     // 1) Create error if user POSTs password data
-//     if (req.body.password || req.body.passwordConfirm) {
-//       return next(
-//         new AppError(
-//           "This route is not for password updates. Please use /update-password",
-//           400
-//         )
-//       );
-//     }
+// @desc    Update current user profile
+// @route   PATCH /api/auth/update-me
+// @access  Private
+exports.updateMe = async (req, res, next) => {
+  try {
+    // 1) Create error if user POSTs password data
+    if (req.body.password || req.body.passwordConfirm) {
+      return next(
+        new AppError(
+          "This route is not for password updates. Please use /update-password",
+          400
+        )
+      );
+    }
 
-//     // 2) Filtered out unwanted fields
-//     const filteredBody = {};
-//     const allowedFields = ["name", "email", "branch", "year"];
-//     allowedFields.forEach((field) => {
-//       if (req.body[field] !== undefined) {
-//         filteredBody[field] = req.body[field];
-//       }
-//     });
+    // 2) Filter allowed fields to prevent unwanted updates
+    const allowedFields = ["name", "email", "year", "branch"];
+    const filteredBody = {};
+    
+    Object.keys(req.body).forEach(field => {
+      if (allowedFields.includes(field) && req.body[field] !== undefined) {
+        filteredBody[field] = req.body[field];
+      }
+    });
 
-//     // 3) Update student document
-//     const updatedStudent = await Student.findByIdAndUpdate(
-//       req.student._id,
-//       filteredBody,
-//       { new: true, runValidators: true }
-//     );
+    // 3) Check if there are any fields to update
+    if (Object.keys(filteredBody).length === 0) {
+      return next(new AppError("No valid fields to update", 400));
+    }
 
-//     res.status(200).json({
-//       status: "success",
-//       data: {
-//         student: updatedStudent,
-//       },
-//     });
-//   } catch (err) {
-//     next(err);
-//   }
-// };
+    // 4) If email is being updated, check if it already exists
+    if (filteredBody.email && filteredBody.email !== req.student.email) {
+      const existingStudent = await Student.findOne({ email: filteredBody.email });
+      if (existingStudent) {
+        return next(new AppError("Email already exists", 400));
+      }
+    }
 
+    // 5) Update student document
+    const updatedStudent = await Student.findByIdAndUpdate(
+      req.student._id,
+      filteredBody,
+      { 
+        new: true, 
+        runValidators: true,
+        context: 'query' // Ensures validators run with correct context
+      }
+    ).select('-password -__v'); // Exclude sensitive fields
+
+    if (!updatedStudent) {
+      return next(new AppError("User not found", 404));
+    }
+
+    // 6) Send response with token (if your auth system requires it)
+    // OR send regular success response
+    if (req.token) {
+      sendTokenResponse(updatedStudent, req.token, 200, res);
+    } else {
+      res.status(200).json({
+        status: "success",
+        data: {
+          student: updatedStudent
+        }
+      });
+    }
+
+  } catch (err) {
+    // Handle duplicate key errors (MongoDB duplicate email)
+    if (err.code === 11000) {
+      return next(new AppError("Email already exists", 400));
+    }
+    next(err);
+  }
+};
 // @desc    Delete current student account
 // @route   DELETE /api/auth/delete-me
 // @access  Private
