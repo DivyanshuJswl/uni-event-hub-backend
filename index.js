@@ -19,6 +19,7 @@ const eventRoutes = require("./routes/eventRoutes");
 const walletRoutes = require("./routes/walletRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const roleRoutes = require("./routes/roleRoutes");
+const passwordRoutes = require("./routes/passwordRoutes");
 
 // Import error handlers
 const AppError = require("./utils/appError");
@@ -130,7 +131,6 @@ connectDB();
 
 mongoose.connection.on("connected", () => {
   console.log("Mongoose connected to DB");
-
 });
 
 mongoose.connection.on("error", (err) => {
@@ -143,6 +143,7 @@ app.use("/api/events", eventRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/roles", roleRoutes);
+app.use("/api/password", passwordRoutes);
 
 app.get("/api/tech-news", async (req, res) => {
   const url = `https://newsapi.org/v2/top-headlines?category=technology&pageSize=8&apiKey=${process.env.NEWS_API_KEY}`;
@@ -176,12 +177,15 @@ app.get("/api/health", (req, res) => {
       // get database name from connection string
       mongoose.connection.name || "unknown",
     ],
-      routes: [
+    routes: [
       "/api/auth",
       "/api/events",
       "/api/wallet",
       "/api/admin",
       "/api/roles",
+      "/api/password",
+      "/api/tech-news",
+      "/api/health",
     ],
   });
 });
@@ -199,13 +203,6 @@ const port = process.env.PORT || 7000;
 const server = app.listen(port, () => {
   console.log(`Server running on port ${port} in ${process.env.NODE_ENV} mode`);
   console.log("Allowed origins:", allowedOrigins);
-  console.log("Available routes:");
-  console.log("- POST /api/auth/signup");
-  console.log("- POST /api/auth/login");
-  console.log("- PATCH /api/roles/upgrade-to-organizer");
-  console.log("- GET /api/events");
-  console.log("- GET /api/admin/students/:email");
-  console.log("- PATCH /api/wallet");
 });
 
 server.setTimeout(0); // Disable timeout completely
