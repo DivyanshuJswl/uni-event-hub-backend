@@ -20,10 +20,13 @@ const walletRoutes = require("./routes/walletRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const roleRoutes = require("./routes/roleRoutes");
 const passwordRoutes = require("./routes/passwordRoutes");
+const logRoutes = require('./routes/logRoutes');
 
 // Import error handlers
 const AppError = require("./utils/appError");
 const globalErrorHandler = require("./middleware/errorMiddleware");
+const { apiLogger } = require('./middleware/logger');
+const errorLogger = require('./middleware/errorLogger');
 
 // Initialize Express app
 const app = express();
@@ -36,8 +39,16 @@ app.use(compression());
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
+// Add start time to request for response time calculation
+app.use((req, res, next) => {
+  req.startTime = Date.now();
+  next();
+});
 
 app.set("trust proxy", 1); // trust first proxy
+
+// API logging middleware
+app.use(apiLogger);
 
 // Rate limiting
 const apiLimiter = rateLimit({
@@ -144,6 +155,7 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/password", passwordRoutes);
+app.use('/api/admin/logs', logRoutes);
 
 app.get("/api/tech-news", async (req, res) => {
   const url = `https://newsapi.org/v2/top-headlines?category=technology&pageSize=8&apiKey=${process.env.NEWS_API_KEY}`;
@@ -189,6 +201,8 @@ app.get("/api/health", (req, res) => {
     ],
   });
 });
+
+app.use(errorLogger);
 
 // ===== ERROR HANDLING =====
 app.all("*", (req, res, next) => {
