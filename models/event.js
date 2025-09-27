@@ -94,6 +94,19 @@ const EventSchema = new mongoose.Schema(
       format: String,
       bytes: Number,
     },
+    eventURL: String,
+    enableRegistration: {
+      type: Boolean,
+      default: true,
+    },
+    digitalCertificates: {
+      type: Boolean,
+      default: false,
+    },
+    sendReminders: {
+      type: Boolean,
+      default: true,
+    }
   },
   {
     timestamps: true,

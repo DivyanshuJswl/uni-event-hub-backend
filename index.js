@@ -69,7 +69,7 @@ app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/signup", authLimiter);
 
 // Body parser, reading data from body into req.body
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 app.use(cookieParser(process.env.COOKIE_SECRET));
 

@@ -66,7 +66,25 @@ router.get(
 // Organizer-specific routes
 router.use(authMiddleware.restrictTo("organizer"));
 
-router.post("/create", eventController.createEvent);
+router.post(
+  "/create",
+  uploadImage.single("image"),
+  (req, res, next) => {
+    // Parse the eventData JSON string if it exists
+    if (req.body.eventData) {
+      try {
+        req.body = { ...JSON.parse(req.body.eventData) };
+      } catch (error) {
+        return res.status(400).json({
+          status: "fail",
+          message: "Invalid event data format",
+        });
+      }
+    }
+    next();
+  },
+  eventController.createEvent
+);
 
 router.patch(
   "/:eventId",

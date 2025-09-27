@@ -1,8 +1,10 @@
+const cloudinary = require("../config/cloudinary");
+const streamifier = require("streamifier");
+const APIFeatures = require("../utils/apiFeatures"); // For filtering/sorting/pagination
 const Event = require("../models/event");
 const Student = require("../models/student");
-const APIFeatures = require("../utils/apiFeatures"); // For filtering/sorting/pagination
 
-// @desc    Create new event (Organizer only)
+// @desc    Create new event with image upload (Organizer only)
 // @route   POST /api/events/create
 // @access  Private/Organizer
 exports.createEvent = async (req, res) => {
@@ -20,6 +22,7 @@ exports.createEvent = async (req, res) => {
       sendReminders,
     } = req.body;
 
+    // Create the event first
     const newEvent = await Event.create({
       title,
       description,
@@ -34,15 +37,72 @@ exports.createEvent = async (req, res) => {
       organizer: req.student._id,
     });
 
+    let imageData = null;
+
+    // Handle image upload if file exists
+    if (req.file) {
+      try {
+        // Upload to Cloudinary
+        const result = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: "events",
+              resource_type: "image",
+              public_id: `event_${newEvent._id}_${Date.now()}`,
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          );
+          streamifier.createReadStream(req.file.buffer).pipe(stream);
+        });
+
+        // Prepare image data
+        imageData = {
+          url: result.secure_url,
+          publicId: result.public_id,
+          width: result.width,
+          height: result.height,
+          format: result.format,
+          bytes: result.bytes,
+          isFeatured: true,
+        };
+
+        // Update event with image
+        newEvent.images = [imageData];
+        newEvent.featuredImage = imageData;
+        await newEvent.save();
+      } catch (uploadError) {
+        console.error("Image upload failed:", uploadError);
+        // Continue without image - event is already created
+      }
+    }
+
+    // Populate the event with organizer details
+    const populatedEvent = await Event.findById(newEvent._id).populate(
+      "organizer",
+      "name email"
+    );
+
     res.status(201).json({
       status: "success",
       data: {
-        event: newEvent,
+        event: populatedEvent,
+        imageUploaded: !!imageData,
       },
     });
   } catch (err) {
-    res.status(400).json({
-      status: "fail",
+    // If event was created but image upload failed, we might want to handle it differently
+    if (err.name === "ValidationError") {
+      return res.status(400).json({
+        status: "fail",
+        message: "Validation error: " + err.message,
+      });
+    }
+
+    res.status(500).json({
+      status: "error",
       message: err.message,
     });
   }
@@ -240,7 +300,7 @@ exports.getUpcomingEvents = async (req, res) => {
 // @route   GET /api/students/:studentId/events
 // @access  Private (student can only access their own events)
 exports.getStudentEvents = async (req, res) => {
-  try {    
+  try {
     // Verify student is accessing their own data
     if (req.params.studentId !== req.student._id.toString()) {
       return res.status(403).json({
@@ -249,9 +309,10 @@ exports.getStudentEvents = async (req, res) => {
       });
     }
 
-    const student = await Student.findById(req.params.studentId)
-      .select('enrolledEvents');
-      
+    const student = await Student.findById(req.params.studentId).select(
+      "enrolledEvents"
+    );
+
     if (!student) {
       return res.status(404).json({
         status: "fail",
@@ -270,7 +331,7 @@ exports.getStudentEvents = async (req, res) => {
       .paginate();
 
     const events = await features.query.populate("organizer", "name email");
-    
+
     res.status(200).json({
       status: "success",
       results: events.length,
@@ -543,9 +604,6 @@ exports.modifyParticipants = async (req, res) => {
   }
 };
 
-// ...existing code...
-const cloudinary = require("../config/cloudinary");
-const streamifier = require("streamifier");
 // Middleware to check if event exists and attach to request
 exports.checkEventExists = async (req, res, next) => {
   try {
