@@ -1,5 +1,5 @@
 // middleware/errorLogger.js
-const Log = require("../models/Log");
+const Log = require("../models/log");
 
 const errorLogger = (err, req, res, next) => {
   if (res.headersSent) {

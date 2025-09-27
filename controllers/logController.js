@@ -1,5 +1,5 @@
 // controllers/logController.js
-const Log = require("../models/Log");
+const Log = require("../models/log");
 const AppError = require("../utils/appError");
 
 // @desc    Get API logs with filtering

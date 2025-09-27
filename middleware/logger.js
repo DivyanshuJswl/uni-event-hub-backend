@@ -1,5 +1,5 @@
 // middleware/logger.js
-const Log = require("../models/Log");
+const Log = require("../models/log");
 
 const apiLogger = async (req, res, next) => {
   const start = Date.now();
