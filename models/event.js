@@ -18,12 +18,8 @@ const EventSchema = new mongoose.Schema(
       required: [true, "Event date is required"],
       validate: {
         validator: function (value) {
-          // Get current time in UTC milliseconds
           const nowUTC = Date.now();
-
-          // Convert input date to UTC milliseconds
           const eventUTCTime = new Date(value).getTime();
-          // Add 1 minute buffer for processing time
           return eventUTCTime > nowUTC - 60000;
         },
         message:
@@ -101,14 +97,31 @@ const EventSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    toJSON: {
+      virtuals: true,
+    },
+    toObject: {
+      virtuals: true,
+    },
   }
 );
 
 // Virtual for checking if event is full
 EventSchema.virtual("isFull").get(function () {
   return this.participants.length >= this.maxParticipants;
+});
+
+// Virtual for participant count
+EventSchema.virtual("participantCount").get(function () {
+  return this.participants.length;
+});
+
+// Virtual for days until event
+EventSchema.virtual("daysUntil").get(function () {
+  const now = new Date();
+  const eventDate = new Date(this.date);
+  const diffTime = eventDate - now;
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 });
 
 // Indexes for better query performance
@@ -120,13 +133,24 @@ EventSchema.index({ status: 1 });
 // Middleware to validate organizer role
 EventSchema.pre("save", async function (next) {
   if (this.isNew) {
-    // Only check for new events
     const organizer = await mongoose.model("Student").findById(this.organizer);
-    if (!organizer || organizer.role !== "organizer") {
-      throw new Error("Only organizers can create events");
+    if (!organizer) {
+      throw new Error("Organizer not found");
+    }
+    if (organizer.role !== "organizer" && organizer.role !== "admin") {
+      throw new Error("Only organizers or admins can create events");
     }
   }
   next();
 });
+
+// Add a method to check if a student is registered
+EventSchema.methods.isStudentRegistered = function (studentId) {
+  return this.participants.some((participant) =>
+    participant._id
+      ? participant._id.toString() === studentId.toString()
+      : false
+  );
+};
 
 module.exports = mongoose.model("Event", EventSchema);

@@ -3,28 +3,68 @@ const Student = require("../models/student");
 const sendEmail = require("../utils/emailSender");
 const AppError = require("../utils/appError");
 
+// Rate limiting storage (in production, use Redis)
+const resetAttempts = new Map();
+
+const canSendResetEmail = (email) => {
+  const attempt = resetAttempts.get(email);
+  if (!attempt) return true;
+
+  const timeDiff = Date.now() - attempt.lastAttempt;
+  return timeDiff > 1 * 60 * 1000; // 5 minutes cooldown
+};
+
+const recordResetAttempt = (email) => {
+  resetAttempts.set(email, { lastAttempt: Date.now() });
+};
+
 // @desc    Forgot password - send reset link
 // @route   POST /api/password/forgot
 // @access  Public
 exports.forgotPassword = async (req, res, next) => {
-  const { email } = req.body;
-  if (!email) return next(new AppError("Email is required", 400));
-  const user = await Student.findOne({ email });
-  if (!user) return next(new AppError("No user found with that email", 404));
+  try {
+    const { email } = req.body;
 
-  // Generate token
-  const resetToken = crypto.randomBytes(32).toString("hex");
-  user.passwordResetToken = crypto
-    .createHash("sha256")
-    .update(resetToken)
-    .digest("hex");
-  user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 min
-  await user.save({ validateBeforeSave: false });
+    if (!email) {
+      return next(new AppError("Email is required", 400));
+    }
 
-  // Send email
-  const resetURL = `${process.env.ZOHO_FRONTEND_URL}/reset-password/${resetToken}`;
+    // Validate email format
+    const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
+    if (!emailRegex.test(email)) {
+      return next(new AppError("Please provide a valid email address", 400));
+    }
 
-  const htmlMessage = `
+    // Rate limiting check
+    if (!canSendResetEmail(email)) {
+      return next(
+        new AppError("Please wait for 1min before requesting another reset link", 429)
+      );
+    }
+
+    const user = await Student.findOne({ email, active: true });
+    if (!user) {
+      // Don't reveal if user exists or not
+      recordResetAttempt(email);
+      return res.status(200).json({
+        message: "If the email exists, a reset link has been sent",
+        success: true,
+      });
+    }
+
+    // Check if it's a Google account
+    // if (user.googleId) {
+    //   return next(new AppError("Google accounts should use Google login", 400));
+    // }
+
+    // Generate token
+    const resetToken = user.createPasswordResetToken();
+    await user.save({ validateBeforeSave: false });
+
+    // Send email
+    const resetURL = `${process.env.ZOHO_FRONTEND_URL}/reset-password/${resetToken}`;
+
+    const htmlMessage = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -171,9 +211,9 @@ exports.forgotPassword = async (req, res, next) => {
     </div>
 </body>
 </html>
-  `;
+    `;
 
-  const textMessage = `
+    const textMessage = `
 PASSWORD RESET REQUEST - UniEvent Hub
 
 Hello ${user.name || "there"},
@@ -194,23 +234,33 @@ The UniEvent Hub Team
 
 © ${new Date().getFullYear()} UniEvent Hub. All rights reserved.
 This is an automated message. Please do not reply to this email.
-  `;
+    `;
 
-  try {
     await sendEmail({
       to: user.email,
       subject: "🔐 Password Reset Request - UniEvent Hub",
       text: textMessage,
       html: htmlMessage,
     });
+
+    recordResetAttempt(email);
+
     res.status(200).json({
-      message: "Password reset link has been sent to your email address.",
+      message: "If the email exists, a reset link has been sent",
       success: true,
     });
   } catch (err) {
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
-    await user.save({ validateBeforeSave: false });
+    // Clear reset token on error
+    if (req.body.email) {
+      await Student.findOneAndUpdate(
+        { email: req.body.email },
+        {
+          passwordResetToken: undefined,
+          passwordResetExpires: undefined,
+        }
+      );
+    }
+
     return next(
       new AppError("Error sending email. Please try again later.", 500)
     );
@@ -221,17 +271,79 @@ This is an automated message. Please do not reply to this email.
 // @route   POST /api/password/reset/:token
 // @access  Public
 exports.resetPassword = async (req, res, next) => {
-  const { token } = req.params;
-  const { password } = req.body;
-  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
-  const user = await Student.findOne({
-    passwordResetToken: hashedToken,
-    passwordResetExpires: { $gt: Date.now() },
-  });
-  if (!user) return next(new AppError("Token invalid or expired", 400));
-  user.password = password;
-  user.passwordResetToken = undefined;
-  user.passwordResetExpires = undefined;
-  await user.save();
-  res.status(200).json({ success: true, message: "Password reset successful" });
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!token) {
+      return next(new AppError("Reset token is required", 400));
+    }
+
+    if (!password || password.length < 8) {
+      return next(new AppError("Password must be at least 8 characters", 400));
+    }
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const user = await Student.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() },
+      active: true,
+    });
+
+    if (!user) {
+      return next(new AppError("Token is invalid or has expired", 400));
+    }
+
+    // Update password and clear reset token
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.passwordChangedAt = Date.now();
+
+    await user.save();
+
+    // Invalidate all existing tokens
+    user.tokens = [];
+    await user.save({ validateBeforeSave: false });
+
+    res.status(200).json({
+      success: true,
+      message: "Password has been reset successfully",
+    });
+  } catch (err) {
+    next(new AppError("Error resetting password", 500));
+  }
+};
+
+// @desc    Validate reset token
+// @route   GET /api/password/validate-reset-token/:token
+// @access  Public
+exports.validateResetToken = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+
+    if (!token) {
+      return next(new AppError("Token is required", 400));
+    }
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const user = await Student.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() },
+      active: true,
+    });
+
+    if (!user) {
+      return next(new AppError("Token is invalid or has expired", 400));
+    }
+
+    res.status(200).json({
+      valid: true,
+      email: user.email,
+    });
+  } catch (err) {
+    next(new AppError("Error validating token", 500));
+  }
 };

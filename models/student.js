@@ -9,6 +9,12 @@ const StudentSchema = new mongoose.Schema(
       required: [true, "Please provide a name"],
       trim: true,
       maxlength: [50, "Name cannot exceed 50 characters"],
+      validate: {
+        validator: function (name) {
+          return name.trim().length > 0;
+        },
+        message: "Name cannot be empty",
+      },
     },
     year: {
       type: Number,
@@ -19,69 +25,92 @@ const StudentSchema = new mongoose.Schema(
     googleId: {
       type: String,
       unique: true,
-      sparse: true
+      sparse: true,
     },
-    avatar: String,
+    avatar: {
+      type: String,
+      validate: {
+        validator: function (url) {
+          if (!url) return true; // Optional field
+          return /^https?:\/\/.+\..+/.test(url);
+        },
+        message: "Please provide a valid avatar URL",
+      },
+    },
     isVerified: {
       type: Boolean,
-      default: false
+      default: false,
     },
-    tokens: {
-      type: [
-        {
-          token: {
-            type: String,
-            required: true,
-          },
-          createdAt: {
-            type: Date,
-            default: Date.now,
-          },
+    tokens: [
+      {
+        token: {
+          type: String,
+          required: true,
         },
-      ],
-      default: [], // Add this to initialize as empty array
-    },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+          expires: 86400, // Auto-expire tokens after 24 hours
+        },
+      },
+    ],
     email: {
       type: String,
       required: [true, "Please provide an email"],
       unique: true,
       trim: true,
       lowercase: true,
-      match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-        "Please provide a valid email",
-      ],
+      validate: {
+        validator: function (email) {
+          return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(email);
+        },
+        message: "Please provide a valid email",
+      },
     },
     password: {
       type: String,
       required: function () {
-        // Only require password if not using Google login
         return !this.googleId;
       },
       minlength: [8, "Password must be at least 8 characters"],
       select: false,
+      validate: {
+        validator: function (password) {
+          if (!this.googleId && (!password || password.length < 8)) {
+            return false;
+          }
+          return true;
+        },
+        message:
+          "Password is required and must be at least 8 characters for non-Google accounts",
+      },
     },
     branch: {
       type: String,
       required: [true, "Please specify your branch"],
-      enum: ["CSE", "ECE", "EEE", "ME", "CE", "IT"],
+      enum: {
+        values: ["CSE", "ECE", "EEE", "ME", "CE", "IT"],
+        message: "Branch must be one of: CSE, ECE, EEE, ME, CE, IT",
+      },
       uppercase: true,
     },
-    // Add this to your schema definition
     metaMaskAddress: {
       type: String,
       validate: {
         validator: function (v) {
-          return v ? /^0x[a-fA-F0-9]{40}$/.test(v) : true;
+          return !v || /^0x[a-fA-F0-9]{40}$/.test(v);
         },
-        message: (props) => `${props.value} is not a valid Ethereum address!`,
+        message: "Invalid Ethereum address format",
       },
       trim: true,
       lowercase: true,
     },
     role: {
       type: String,
-      enum: ["participant", "organizer", "admin"],
+      enum: {
+        values: ["participant", "organizer", "admin"],
+        message: "Role must be participant, organizer, or admin",
+      },
       default: "participant",
     },
     enrolledEvents: [
@@ -93,6 +122,16 @@ const StudentSchema = new mongoose.Schema(
     passwordChangedAt: Date,
     passwordResetToken: String,
     passwordResetExpires: Date,
+    lastLoginAt: Date,
+    loginAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    lockUntil: {
+      type: Date,
+      select: false,
+    },
     active: {
       type: Boolean,
       default: true,
@@ -101,32 +140,58 @@ const StudentSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    toJSON: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id;
+        delete ret._id;
+        delete ret.__v;
+        delete ret.tokens;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id;
+        delete ret._id;
+        delete ret.__v;
+        delete ret.tokens;
+        return ret;
+      },
+    },
   }
 );
 
-// Password hashing middleware
+// Virtual for account lock status
+StudentSchema.virtual("isLocked").get(function () {
+  return !!(this.lockUntil && this.lockUntil > Date.now());
+});
+
+// Password hashing middleware - IMPROVED
 StudentSchema.pre("save", async function (next) {
   try {
     // Only run if password was modified
     if (!this.isModified("password")) return next();
-
     // Hash the password with cost of 12
     this.password = await bcrypt.hash(this.password, 12);
 
-    // Set passwordChangedAt for new users
-    if (!this.isNew) {
-      this.passwordChangedAt = Date.now() - 1000;
-    }
+    // Set passwordChangedAt
+    this.passwordChangedAt = Date.now() - 1000; // Subtract 1s to ensure token works
+
     next();
   } catch (err) {
     next(err);
   }
 });
 
-// Instance method to compare passwords
+// Instance method to compare passwords - IMPROVED
 StudentSchema.methods.correctPassword = async function (candidatePassword) {
+
+  if (!candidatePassword || !this.password) {
+    return false;
+  }
+
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
@@ -154,6 +219,35 @@ StudentSchema.methods.createPasswordResetToken = function () {
   this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   return resetToken;
+};
+
+// Increment login attempts
+StudentSchema.methods.incrementLoginAttempts = async function () {
+  if (this.lockUntil && this.lockUntil < Date.now()) {
+    return await this.updateOne({
+      $set: { loginAttempts: 1 },
+      $unset: { lockUntil: 1 },
+    });
+  }
+
+  const updates = { $inc: { loginAttempts: 1 } };
+
+  if (this.loginAttempts + 1 >= 5) {
+    updates.$set = { lockUntil: Date.now() + 2 * 60 * 60 * 1000 }; // 2 hours
+  }
+
+  return await this.updateOne(updates);
+};
+
+// Reset login attempts on successful login
+StudentSchema.methods.resetLoginAttempts = async function () {
+  return await this.updateOne({
+    $set: { lastLoginAt: new Date() },
+    $unset: {
+      loginAttempts: 1,
+      lockUntil: 1,
+    },
+  });
 };
 
 // Query middleware to filter out inactive students

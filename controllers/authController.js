@@ -3,24 +3,12 @@ const AppError = require("../utils/appError");
 const axios = require("axios");
 const Student = require("../models/student");
 
-// Utility function to sign JWT tokens with complete student data
+// Utility function to sign JWT tokens
 const signToken = (student) => {
-  // Create safe payload without sensitive data
   const payload = {
     id: student._id,
-    _id: student._id,
-    name: student.name,
-    year: student.year,
-    isVerified: student.isVerified,
     email: student.email,
-    branch: student.branch,
     role: student.role,
-    enrolledEvents: student.enrolledEvents,
-    createdAt: student.createdAt,
-    updatedAt: student.updatedAt,
-    googleId: student.googleId,
-    avatar: student.avatar,
-    metaMaskAddress: student.metaMaskAddress,
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {
@@ -28,11 +16,10 @@ const signToken = (student) => {
   });
 };
 
-// Helper function to send token response
+// Send token response
 const sendTokenResponse = (student, token, statusCode, res) => {
-  // Create safe response object without sensitive data
   const studentResponse = {
-    id: student._id.toString(),
+    id: student._id,
     name: student.name,
     year: student.year,
     isVerified: student.isVerified,
@@ -45,9 +32,17 @@ const sendTokenResponse = (student, token, statusCode, res) => {
     googleId: student.googleId,
     avatar: student.avatar,
     metaMaskAddress: student.metaMaskAddress,
+    createdAt: student.createdAt,
   };
 
-  console.log(`Token generated for student ${student.email}: ${token}`);
+   // Set cookie if needed
+  res.cookie("jwt", token, {
+    expires: new Date(
+      Date.now() + process.env.JWT_COOKIE_EXPIRES * 24 * 60 * 60 * 1000
+    ),
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+  });
 
   res.status(statusCode).json({
     status: true,
@@ -60,6 +55,7 @@ const sendTokenResponse = (student, token, statusCode, res) => {
 // Create and send token with response
 const createSendToken = (student, statusCode, res) => {
   const token = signToken(student);
+  console.log(`Token generated for student ${student.email}: ${token}`);
 
   // Initialize tokens array if undefined
   if (!student.tokens) {
@@ -84,8 +80,9 @@ const createSendToken = (student, statusCode, res) => {
     });
 };
 
-// @desc    Verify hCaptcha token
-async function verifyCaptcha(token) {
+// Verify captcha
+const verifyCaptcha = async (token) => {
+  if (process.env.NODE_ENV === "test") return true;
   try {
     const response = await axios.post(
       "https://hcaptcha.com/siteverify",
@@ -93,14 +90,17 @@ async function verifyCaptcha(token) {
         secret: process.env.HCAPTCHA_SECRET_KEY,
         response: token,
       }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        timeout: 5000,
+      }
     );
     return response.data.success;
   } catch (error) {
     console.error("Captcha verification failed:", error);
     return false;
   }
-}
+};
 
 // @desc    Sign up a new student
 // @route   POST /api/auth/signup
@@ -110,6 +110,11 @@ exports.signup = async (req, res, next) => {
     const { name, year, email, password, branch, role, captchaToken } =
       req.body;
 
+    // Validate required fields
+    if (!name || !year || !email || !password || !branch) {
+      return next(new AppError("All fields are required", 400));
+    }
+
     // 1) Validate captcha token if provided and required
     if (
       process.env.REQUIRE_CAPTCHA === "true" &&
@@ -118,25 +123,33 @@ exports.signup = async (req, res, next) => {
       return res.status(400).json({ message: "Captcha verification failed" });
     }
 
-    // 2) Check if email already exists
+    // Check if email exists
     const existingStudent = await Student.findOne({ email });
     if (existingStudent) {
       return next(new AppError("Email already in use", 400));
     }
 
-    // 3) Create new student
     const newStudent = await Student.create({
-      name,
-      year,
-      email,
+      name: name.trim(),
+      year: parseInt(year),
+      email: email.toLowerCase().trim(),
       password,
-      branch,
+      branch: branch.toUpperCase(),
       role: role || "participant",
     });
 
     // 4) Generate JWT and send response
     createSendToken(newStudent, 201, res);
   } catch (err) {
+    // Handle duplicate key error
+    if (err.code === 11000) {
+      return next(new AppError("Email already in use", 400));
+    }
+    // Handle validation errors
+    if (err.name === "ValidationError") {
+      const messages = Object.values(err.errors).map((error) => error.message);
+      return next(new AppError(messages.join(", "), 400));
+    }
     next(err);
   }
 };
@@ -148,113 +161,92 @@ exports.login = async (req, res, next) => {
   try {
     const { email, password, captchaToken } = req.body;
 
-    // 1) Validate captcha token if provided and required
-    if (
-      process.env.REQUIRE_CAPTCHA === "true" &&
-      !(await verifyCaptcha(captchaToken))
-    ) {
-      return res.status(400).json({ message: "Captcha verification failed" });
-    }
-
-    // 2) Check if email and password exist
     if (!email || !password) {
       return next(new AppError("Please provide email and password", 400));
     }
 
-    // 3) Check if student exists and password is correct
-    const student = await Student.findOne({ email, active: true }).select(
-      "+password"
-    );
+    // Verify captcha
+    if (process.env.REQUIRE_CAPTCHA === "true") {
+      if (!captchaToken) {
+        return next(new AppError("Captcha token is required", 400));
+      }
 
-    if (!student) {
-      return next(new AppError("Incorrect email or password", 401));
+      const captchaValid = await verifyCaptcha(captchaToken);
+      if (!captchaValid) {
+        return next(new AppError("Captcha verification failed", 400));
+      }
     }
 
-    // Check if this is a Google account trying to use password login
-    if (student.googleId) {
+    // Find student with password
+    const student = await Student.findOne({
+      email: email.toLowerCase().trim(),
+      active: true,
+    }).select("+password +loginAttempts +lockUntil");
+
+    if (!student) {
+      return next(new AppError("Invalid email or password", 401));
+    }
+
+    // Check if account is locked
+    if (student.isLocked) {
       return next(
-        new AppError("Please use Google login for this account", 401)
+        new AppError("Account temporarily locked. Try again later.", 423)
       );
     }
 
     // Verify password
-    if (!(await student.correctPassword(password))) {
-      return next(new AppError("Incorrect email or password", 401));
+    const isPasswordCorrect = await student.correctPassword(password);
+
+    if (!isPasswordCorrect) {
+      await student.incrementLoginAttempts();
+      return next(new AppError("Invalid email or password", 401));
     }
 
-    // 4) If everything ok, send token to client
+    // Reset login attempts on successful login
+    await student.resetLoginAttempts();
     createSendToken(student, 200, res);
   } catch (err) {
     next(err);
   }
 };
 
-// @desc    Logout student (clear token)
+// @desc    Logout student
 // @route   POST /api/auth/logout
 // @access  Private
-
-// Utility function to verify and decode JWT token
-const verifyToken = (token) => {
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return decoded;
-  } catch (error) {
-    console.error("Error verifying token:", error.message);
-    return null;
-  }
-};
-
-// Updated logout function using token decoding
 exports.logout = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace("Bearer ", "");
 
     if (!token) {
-      return res.status(400).json({
-        status: "fail",
-        message: "No token provided",
+      return res.status(200).json({
+        status: "success",
+        message: "Logged out successfully",
       });
     }
 
-    // Decode token to get user ID
-    const decoded = verifyToken(token);
-    if (!decoded) {
-      return res.status(401).json({
-        status: "fail",
-        message: "Invalid token",
-      });
-    }
-
-    const userId = decoded._id || decoded.id;
-    const student = await Student.findById(userId);
-
-    if (!student) {
-      return res.status(404).json({
-        status: "fail",
-        message: "User not found",
-      });
-    }
-
-    // Remove the current token from tokens array
-    student.tokens = student.tokens.filter(
+    // Remove the current token
+    req.student.tokens = req.student.tokens.filter(
       (tokenObj) => tokenObj.token !== token
     );
 
-    await student.save({ validateBeforeSave: false });
+    await req.student.save({ validateBeforeSave: false });
+
+    // Clear cookie
+    res.clearCookie("jwt");
 
     res.status(200).json({
       status: "success",
       message: "Logged out successfully",
     });
   } catch (err) {
-    res.status(500).json({
-      status: "error",
-      message: "Error during logout",
+    res.status(200).json({
+      status: "success",
+      message: "Logged out successfully",
     });
   }
 };
 
-// @desc    Get current user from JWT token
+// @desc    Get current user
 // @route   GET /api/auth/me
 // @access  Private
 exports.getMe = async (req, res, next) => {
@@ -303,75 +295,61 @@ exports.changePassword = async (req, res, next) => {
 // @access  Private
 exports.updateMe = async (req, res, next) => {
   try {
-    // 1) Create error if user POSTs password data
-    if (req.body.password || req.body.passwordConfirm) {
-      return next(
-        new AppError(
-          "This route is not for password updates. Please use /update-password",
-          400
-        )
-      );
-    }
+    // Filter out restricted fields
+    const restrictedFields = [
+      "password",
+      "role",
+      "active",
+      "tokens",
+      "googleId",
+    ];
+    restrictedFields.forEach((field) => delete req.body[field]);
 
-    // 2) Filter allowed fields to prevent unwanted updates
-    const allowedFields = ["name", "email", "year", "branch"];
-    const filteredBody = {};
-    
-    Object.keys(req.body).forEach(field => {
-      if (allowedFields.includes(field) && req.body[field] !== undefined) {
-        filteredBody[field] = req.body[field];
-      }
-    });
-
-    // 3) Check if there are any fields to update
-    if (Object.keys(filteredBody).length === 0) {
-      return next(new AppError("No valid fields to update", 400));
-    }
-
-    // 4) If email is being updated, check if it already exists
-    if (filteredBody.email && filteredBody.email !== req.student.email) {
-      const existingStudent = await Student.findOne({ email: filteredBody.email });
+    // Validate email if being updated
+    if (req.body.email && req.body.email !== req.student.email) {
+      const existingStudent = await Student.findOne({
+        email: req.body.email.toLowerCase().trim(),
+      });
       if (existingStudent) {
-        return next(new AppError("Email already exists", 400));
+        return next(new AppError("Email already in use", 400));
       }
     }
 
-    // 5) Update student document
     const updatedStudent = await Student.findByIdAndUpdate(
       req.student._id,
-      filteredBody,
-      { 
-        new: true, 
+      req.body,
+      {
+        new: true,
         runValidators: true,
-        context: 'query' // Ensures validators run with correct context
+        context: "query",
       }
-    ).select('-password -__v'); // Exclude sensitive fields
+    );
 
     if (!updatedStudent) {
       return next(new AppError("User not found", 404));
     }
-
-    // 6) Send response with token (if your auth system requires it)
-    // OR send regular success response
     if (req.token) {
       sendTokenResponse(updatedStudent, req.token, 200, res);
     } else {
       res.status(200).json({
         status: "success",
         data: {
-          student: updatedStudent
-        }
+          student: updatedStudent,
+        },
       });
     }
-
   } catch (err) {
-    // Handle duplicate key errors (MongoDB duplicate email)
     if (err.code === 11000) {
-      return next(new AppError("Email already exists", 400));
+      return next(new AppError("Email already in use", 400));
+    }
+    if (err.name === "ValidationError") {
+      const messages = Object.values(err.errors).map((error) => error.message);
+      return next(new AppError(messages.join(", "), 400));
     }
     next(err);
   }
 };
+
 // @desc    Delete current student account
 // @route   DELETE /api/auth/delete-me
 // @access  Private
@@ -413,8 +391,8 @@ exports.updatePassword = async (req, res, next) => {
   }
 };
 
-const cloudinary = require('../config/cloudinary');
-const streamifier = require('streamifier');
+const cloudinary = require("../config/cloudinary");
+const streamifier = require("streamifier");
 
 // @desc    Upload avatar for student
 // @route   PATCH /api/user/avatar
@@ -423,26 +401,28 @@ exports.uploadAvatar = async (req, res, next) => {
   try {
     // Check if file exists
     if (!req.file) {
-      return next(new AppError('Please upload an image file', 400));
+      return next(new AppError("Please upload an image file", 400));
     }
 
     // Check file size (additional validation)
     if (req.file.size > 5 * 1024 * 1024) {
-      return next(new AppError('File size too large. Maximum 5MB allowed.', 400));
+      return next(
+        new AppError("File size too large. Maximum 5MB allowed.", 400)
+      );
     }
 
     // Upload to Cloudinary using promise-based approach
     const uploadPromise = new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'avatars',
-          resource_type: 'image',
+          folder: "avatars",
+          resource_type: "image",
           public_id: `student_${req.student._id}_${Date.now()}`,
           transformation: [
-            { width: 500, height: 500, crop: 'limit' },
-            { quality: 'auto' },
-            { format: 'auto' }
-          ]
+            { width: 500, height: 500, crop: "limit" },
+            { quality: "auto" },
+            { format: "auto" },
+          ],
         },
         (error, result) => {
           if (error) reject(error);
@@ -465,12 +445,12 @@ exports.uploadAvatar = async (req, res, next) => {
     );
 
     res.status(200).json({
-      status: 'success',
-      message: 'Avatar uploaded successfully',
-      avatarUrl: result.secure_url
+      status: "success",
+      message: "Avatar uploaded successfully",
+      avatarUrl: result.secure_url,
     });
   } catch (err) {
-    next(new AppError('Error uploading avatar: ' + err.message, 500));
+    next(new AppError("Error uploading avatar: " + err.message, 500));
   }
 };
 
@@ -484,10 +464,10 @@ exports.deleteAvatar = async (req, res, next) => {
     );
 
     res.status(200).json({
-      status: 'success',
-      message: 'Avatar removed successfully'
+      status: "success",
+      message: "Avatar removed successfully",
     });
   } catch (err) {
-    next(new AppError('Error removing avatar: ' + err.message, 500));
+    next(new AppError("Error removing avatar: " + err.message, 500));
   }
 };
