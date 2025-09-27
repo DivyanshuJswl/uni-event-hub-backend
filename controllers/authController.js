@@ -41,7 +41,7 @@ const sendTokenResponse = (student, token, statusCode, res) => {
       Date.now() + process.env.JWT_COOKIE_EXPIRES * 24 * 60 * 60 * 1000
     ),
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "development",
   });
 
   res.status(statusCode).json({

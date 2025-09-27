@@ -24,7 +24,7 @@ const errorLogger = (err, req, res, next) => {
     queryParams: Object.keys(req.query).length > 0 ? req.query : undefined,
     error: {
       message: err.message,
-      stack: process.env.NODE_ENV === "production" ? undefined : err.stack,
+      stack: process.env.NODE_ENV === "development" ? undefined : err.stack,
       name: err.name,
       code: err.statusCode || 500,
       operational: err.isOperational || false,
