@@ -12,6 +12,7 @@ const hpp = require("hpp");
 const path = require("path");
 const compression = require("compression");
 const connectDB = require("./config/connectdb");
+const chatRoutes = require('./routes/chatRoutes');
 
 // Import routes
 const authRoutes = require("./routes/authRoutes");
@@ -156,7 +157,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/password", passwordRoutes);
 app.use('/api/admin/logs', logRoutes);
-
+app.use('/api/chat', chatRoutes);
 app.get("/api/tech-news", async (req, res) => {
   const url = `https://newsapi.org/v2/top-headlines?category=technology&pageSize=8&apiKey=${process.env.NEWS_API_KEY}`;
   try {

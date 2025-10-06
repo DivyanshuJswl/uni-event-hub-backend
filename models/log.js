@@ -70,6 +70,12 @@ const LogSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+     // expiresAt field for TTL index
+    expiresAt: {
+      type: Date,
+      default: undefined,
+      index: { expireAfterSeconds: 10 * 24 * 60 * 60 }, // Default: 10 days
+    },
   },
   {
     timestamps: true,

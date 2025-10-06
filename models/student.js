@@ -50,7 +50,7 @@ const StudentSchema = new mongoose.Schema(
         createdAt: {
           type: Date,
           default: Date.now,
-          expires: 86400, // Auto-expire tokens after 24 hours
+          // expires: 86400, // Auto-expire tokens after 24 hours
         },
       },
     ],
