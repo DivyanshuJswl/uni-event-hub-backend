@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const Student = require("../models/student");
 const Event = require("../models/event");
+const AppError = require("../utils/appError");
 
 class AuthError extends Error {
   constructor(message, statusCode) {

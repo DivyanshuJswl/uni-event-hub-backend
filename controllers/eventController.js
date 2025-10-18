@@ -377,6 +377,148 @@ exports.getEvent = async (req, res) => {
   }
 };
 
+// @desc    Get organizer's completed events
+// @route   GET /api/events/organizer/completed
+// @access  Private/Organizer
+exports.getOrganizerCompletedEvents = async (req, res) => {
+  try {
+    const currentDate = new Date();
+
+    const features = new APIFeatures(
+      Event.find({
+        organizer: req.student._id,
+        date: { $lt: currentDate }, // Events that have passed
+        status: { $in: ["completed", "upcoming", "ongoing"] }, // Include various statuses
+      }),
+      req.query
+    )
+      .filter()
+      .sort("-date") // Show most recent first
+      .limitFields()
+      .paginate();
+
+    const events = await features.query
+      .populate("organizer", "name email")
+      .populate("participants", "name email");
+
+    // Transform events to mark them as completed based on date
+    const completedEvents = events
+      .map((event) => ({
+        ...event.toObject(),
+        status: event.date < currentDate ? "completed" : event.status,
+      }))
+      .filter((event) => event.status === "completed");
+
+    res.status(200).json({
+      status: "success",
+      results: completedEvents.length,
+      data: {
+        events: completedEvents,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
+  }
+};
+
+// @desc    Get all organizer events with filtering
+// @route   GET /api/events/organizer
+// @access  Private/Organizer
+exports.getOrganizerEvents = async (req, res) => {
+  try {
+    const { status, category, sort } = req.query;
+
+    // Build filter object
+    const filter = { organizer: req.student._id };
+
+    // Add status filter if provided
+    if (status && status !== "all") {
+      if (status === "completed") {
+        filter.date = { $lt: new Date() };
+      } else if (status === "upcoming") {
+        filter.date = { $gt: new Date() };
+        filter.status = "upcoming";
+      } else if (status === "ongoing") {
+        filter.status = "ongoing";
+      }
+    }
+
+    // Add category filter if provided
+    if (category && category !== "all") {
+      filter.category = category;
+    }
+
+    const features = new APIFeatures(Event.find(filter), req.query)
+      .filter()
+      .sort(sort || "-createdAt")
+      .limitFields()
+      .paginate();
+
+    const events = await features.query
+      .populate("organizer", "name email")
+      .populate("participants", "name email");
+
+    res.status(200).json({
+      status: "success",
+      results: events.length,
+      data: {
+        events,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
+  }
+};
+
+// @desc    Update event status to completed
+// @route   PATCH /api/events/:eventId/complete
+// @access  Private/Organizer
+exports.markEventAsCompleted = async (req, res) => {
+  try {
+    const event = await Event.findOneAndUpdate(
+      {
+        _id: req.params.eventId,
+        organizer: req.student._id,
+      },
+      {
+        status: "completed",
+        completedAt: new Date(),
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    )
+      .populate("organizer", "name email")
+      .populate("participants", "name email");
+
+    if (!event) {
+      return res.status(404).json({
+        status: "fail",
+        message: "Event not found or you are not the organizer",
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        event,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
+  }
+};
+
 // @desc    Enroll in event (Participant only)
 // @route   POST /api/events/enroll/:eventId
 // @access  Private/Participant

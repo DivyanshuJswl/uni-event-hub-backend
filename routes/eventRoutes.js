@@ -13,6 +13,22 @@ router.get("/:eventId", checkEventExists, eventController.getEvent);
 // Protected routes (require authentication)
 router.use(authMiddleware.protect);
 
+// Organizer-specific routes
+router.get('/organizer/completed', 
+  authMiddleware.restrictTo('organizer', 'admin'),
+  eventController.getOrganizerCompletedEvents
+);
+
+router.get('/organizer/events',
+  authMiddleware.restrictTo('organizer', 'admin'),
+  eventController.getOrganizerEvents
+);
+
+router.patch('/:eventId/complete',
+  authMiddleware.restrictTo('organizer', 'admin'),
+  eventController.markEventAsCompleted
+);
+
 // Upload routes
 router.post(
   "/:eventId/upload-image",

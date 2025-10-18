@@ -106,7 +106,18 @@ const EventSchema = new mongoose.Schema(
     sendReminders: {
       type: Boolean,
       default: true,
-    }
+    },
+    completedAt: {
+      type: Date,
+    },
+    lastStatusUpdate: {
+      type: Date,
+      default: Date.now,
+    },
+    statusUpdateCount: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
@@ -119,14 +130,16 @@ const EventSchema = new mongoose.Schema(
   }
 );
 
-// Virtual for checking if event is full
+// Virtual for checking if event is full - FIXED
 EventSchema.virtual("isFull").get(function () {
-  return this.participants.length >= this.maxParticipants;
+  const participants = this.participants || [];
+  return participants.length >= this.maxParticipants;
 });
 
-// Virtual for participant count
+// Virtual for participant count - FIXED
 EventSchema.virtual("participantCount").get(function () {
-  return this.participants.length;
+  const participants = this.participants || [];
+  return participants.length;
 });
 
 // Virtual for days until event
@@ -142,6 +155,7 @@ EventSchema.index({ date: 1 });
 EventSchema.index({ organizer: 1 });
 EventSchema.index({ category: 1 });
 EventSchema.index({ status: 1 });
+EventSchema.index({ lastStatusUpdate: 1 });
 
 // Middleware to validate organizer role
 EventSchema.pre("save", async function (next) {
@@ -164,6 +178,95 @@ EventSchema.methods.isStudentRegistered = function (studentId) {
       ? participant._id.toString() === studentId.toString()
       : false
   );
+};
+
+// Add instance method to update individual event status
+EventSchema.methods.updateStatus = function () {
+  const now = new Date();
+  const eventTime = new Date(this.date);
+  const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+  let newStatus = this.status;
+
+  if (this.status === "cancelled") {
+    return; // Don't update cancelled events
+  }
+
+  if (eventTime <= thirtyMinutesAgo) {
+    newStatus = "completed";
+  } else if (eventTime <= now) {
+    newStatus = "ongoing";
+  } else {
+    newStatus = "upcoming";
+  }
+
+  // Only update if status changed
+  if (newStatus !== this.status) {
+    this.status = newStatus;
+    this.lastStatusUpdate = now;
+    this.statusUpdateCount += 1;
+
+    if (newStatus === "completed") {
+      this.completedAt = now;
+    } else {
+      this.completedAt = undefined;
+    }
+  }
+};
+
+// Static method for bulk status update
+EventSchema.statics.updateEventsStatus = async function () {
+  const now = new Date();
+  const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+  const result = {
+    updated: 0,
+    completed: 0,
+    ongoing: 0,
+    upcoming: 0,
+  };
+
+  try {
+    // Get all events that might need status update
+    const events = await this.find({
+      status: { $ne: "cancelled" },
+      $or: [
+        { lastStatusUpdate: { $lt: new Date(now.getTime() - 5 * 60 * 1000) } }, // Not updated in last 5 min
+        { lastStatusUpdate: { $exists: false } },
+      ],
+    });
+
+    for (const event of events) {
+      const previousStatus = event.status;
+      event.updateStatus();
+
+      if (event.isModified("status")) {
+        await event.save();
+        result.updated++;
+
+        switch (event.status) {
+          case "completed":
+            result.completed++;
+            break;
+          case "ongoing":
+            result.ongoing++;
+            break;
+          case "upcoming":
+            result.upcoming++;
+            break;
+        }
+
+        console.log(
+          `Event ${event.title} status changed: ${previousStatus} → ${event.status}`
+        );
+      }
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Error in bulk status update:", error);
+    throw error;
+  }
 };
 
 module.exports = mongoose.model("Event", EventSchema);

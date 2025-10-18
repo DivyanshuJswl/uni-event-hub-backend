@@ -1,15 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const oauthController = require('../controllers/oauthController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { uploadImage } = require('../middleware/uploadMiddleware');
+
 // @desc    Register new student
 // @route   POST /api/auth/signup
 // @access  Public
 router.post('/signup', authController.signup);
 
-router.post('/google', oauthController.googleLogin);
+// @desc    Login new student
+// @route   POST /api/auth/google
+// @access  Public
+router.post('/google', authController.googleLogin);
 
 // @desc    Login student
 // @route   POST /api/auth/login
@@ -54,5 +57,14 @@ router.delete('/delete-me', authMiddleware.protect, authController.deleteMe);
 // @route   PATCH /api/auth/update-password
 // @access  Private
 router.patch('/update-password', authMiddleware.protect, authController.updatePassword);
+
+// @desc    Change role
+// @route   PATCH /api/auth/upgrade-to-organizer
+// @access  Private
+router.patch(
+  "/upgrade-to-organizer",
+  authMiddleware.protect,
+  authController.upgradeToOrganizer
+);
 
 module.exports = router;

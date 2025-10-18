@@ -19,15 +19,16 @@ const authRoutes = require("./routes/authRoutes");
 const eventRoutes = require("./routes/eventRoutes");
 const walletRoutes = require("./routes/walletRoutes");
 const adminRoutes = require("./routes/adminRoutes");
-const roleRoutes = require("./routes/roleRoutes");
 const passwordRoutes = require("./routes/passwordRoutes");
 const logRoutes = require("./routes/logRoutes");
+const certificateRoutes = require("./routes/certificateRoutes");
 
 // Import error handlers
 const AppError = require("./utils/appError");
 const globalErrorHandler = require("./middleware/errorMiddleware");
 const { apiLogger } = require("./middleware/logger");
 const errorLogger = require("./middleware/errorLogger");
+const eventStatusService = require("./services/eventStatusService");
 
 // Initialize Express app
 const app = express();
@@ -149,15 +150,34 @@ mongoose.connection.on("error", (err) => {
   console.error("Mongoose connection error:", err);
 });
 
+// Add this after your database connection
+const initializeServices = async () => {
+  try {
+    // Event status service will auto-initialize
+    console.log("🚀 Background services initialized");
+
+    // Optional: Test the service on startup
+    setTimeout(async () => {
+      try {
+        await eventStatusService.manualUpdate();
+      } catch (error) {
+        console.error("Startup status update failed:", error);
+      }
+    }, 15000); // Run 15 seconds after startup
+  } catch (error) {
+    console.error("Failed to initialize services:", error);
+  }
+};
+
 // ===== ROUTES =====
 app.use("/api/auth", authRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/roles", roleRoutes);
 app.use("/api/password", passwordRoutes);
 app.use("/api/admin/logs", logRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/certificates", certificateRoutes);
 app.get("/api/tech-news", async (req, res) => {
   const url = `https://newsapi.org/v2/top-headlines?category=technology&pageSize=8&apiKey=${process.env.NEWS_API_KEY}`;
   try {

@@ -1,7 +1,12 @@
+const { OAuth2Client } = require("google-auth-library");
 const jwt = require("jsonwebtoken");
-const AppError = require("../utils/appError");
+const crypto = require("crypto");
 const axios = require("axios");
+const AppError = require("../utils/appError");
 const Student = require("../models/student");
+
+// Initialize the client properly
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Utility function to sign JWT tokens
 const signToken = (student) => {
@@ -19,7 +24,8 @@ const signToken = (student) => {
 // Send token response
 const sendTokenResponse = (student, token, statusCode, res) => {
   const studentResponse = {
-    id: student._id,
+    _id: student._id,
+    id: student._id.toString(),
     name: student.name,
     year: student.year,
     isVerified: student.isVerified,
@@ -35,7 +41,7 @@ const sendTokenResponse = (student, token, statusCode, res) => {
     createdAt: student.createdAt,
   };
 
-   // Set cookie if needed
+  // Set cookie if needed
   res.cookie("jwt", token, {
     expires: new Date(
       Date.now() + process.env.JWT_COOKIE_EXPIRES * 24 * 60 * 60 * 1000
@@ -207,6 +213,129 @@ exports.login = async (req, res, next) => {
     createSendToken(student, 200, res);
   } catch (err) {
     next(err);
+  }
+};
+
+// @desc Google Login
+// @route POST /api/auth/google
+// @desc Public
+exports.googleLogin = async (req, res) => {
+  console.log("Google Client ID:", process.env.GOOGLE_CLIENT_ID);
+
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      console.error("No credential provided in request body");
+      return res.status(400).json({
+        status: "fail",
+        message: "Missing ID token",
+        solution: "Ensure frontend sends credential parameter",
+      });
+    }
+
+    // Verify token structure first
+    if (!credential.match(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/)) {
+      console.error(
+        "Invalid JWT format received:",
+        credential.slice(0, 20) + "..."
+      );
+      return res.status(400).json({
+        status: "fail",
+        message: "Invalid token format",
+        expected: "JWT ID Token (starts with eyJ...)",
+      });
+    }
+
+    // Verify the Google ID token
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    console.log("Successful authentication for:", payload.email);
+    const { email, name, picture, sub: googleId } = payload;
+
+    let student = await Student.findOne({ email });
+    let isNewUser = false;
+
+    if (!student) {
+      isNewUser = true;
+      student = new Student({
+        name,
+        email,
+        googleId,
+        avatar: picture,
+        role: "participant",
+        year: 1,
+        branch: "CSE",
+        password: crypto.randomBytes(16).toString("hex"), // Dummy password for schema validation
+        isVerified: true,
+      });
+      await student.save();
+    } else if (!student.googleId) {
+      // Merge existing account with Google auth
+      student.googleId = googleId;
+      student.avatar = picture;
+      student.isVerified = true;
+      await student.save();
+    }
+
+    // Use the same signToken function for consistency
+    const token = signToken(student);
+
+    // For Google users, we might not need to save to tokens array
+    // But let's maintain consistency with your existing approach
+    if (student.tokens !== undefined) {
+      if (!student.tokens) {
+        student.tokens = [];
+      }
+      student.tokens.push({ token });
+      await student.save({ validateBeforeSave: false });
+    }
+
+    // Create response matching your other auth endpoints
+    const studentResponse = {
+      _id: student._id,
+      id: student._id.toString(),
+      name: student.name,
+      year: student.year,
+      isVerified: student.isVerified,
+      email: student.email,
+      branch: student.branch,
+      role: student.role,
+      enrolledEvents: student.enrolledEvents,
+      createdAt: student.createdAt,
+      updatedAt: student.updatedAt,
+      googleId: student.googleId,
+      avatar: student.avatar,
+    };
+
+    res.status(200).json({
+      status: "success",
+      token,
+      isNewUser,
+      data: {
+        student: studentResponse,
+      },
+    });
+  } catch (error) {
+    console.error("Complete authentication error:", {
+      message: error.message,
+      tokenReceived: req.body.credential
+        ? req.body.credential.slice(0, 20) + "..."
+        : "none",
+      stack: error.stack,
+    });
+
+    res.status(401).json({
+      status: "fail",
+      message: "Authentication failed",
+      details: error.message,
+      required: "Valid Google ID Token (JWT)",
+      solution: "Check frontend is sending credentialResponse.credential",
+    });
   }
 };
 
@@ -469,5 +598,38 @@ exports.deleteAvatar = async (req, res, next) => {
     });
   } catch (err) {
     next(new AppError("Error removing avatar: " + err.message, 500));
+  }
+};
+
+// @desc    Change role
+// @route   PATCH /api/auth/upgrade-to-organizer
+// @access  Private
+exports.upgradeToOrganizer = async (req, res, next) => {
+  try {
+    // 1) Check if already an organizer
+    if (req.student.role === "organizer") {
+      return next(new AppError("You are already an organizer", 400));
+    }
+
+    // 2) Upgrade to organizer
+    const student = await Student.findByIdAndUpdate(
+      req.student._id,
+      { role: "organizer" },
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "You are now an organizer!",
+      data: {
+        student: {
+          id: student._id,
+          name: student.name,
+          role: student.role,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
   }
 };
