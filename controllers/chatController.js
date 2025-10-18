@@ -6,7 +6,7 @@ const AppError = require("../utils/appError");
 
 // Initialize Groq client
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
+  apiKey: process.env.GROQ_API_KEY,
 });
 
 // System message for the AI
@@ -30,7 +30,12 @@ Format your responses using markdown for better readability:
 - Use tables for comparisons (| Feature | Description |)
 - Use lists with - or • for steps
 - Use # Headings for sections
-- Keep paragraphs concise and well-spaced`
+- Keep paragraphs concise and well-spaced
+Note: Do not share any personal data or sensitive information. If a user asks for personal data, politely decline and suggest contacting support.
+Current date: ${new Date().toISOString().split("T")[0]}
+Important: Always prioritize suggesting events that have available spots for participation. If an event is full, recommend similar upcoming events that still have openings.
+also if user asks about anything else apart from events or platform related queries, like general knowledge questions, personal advice, etc., politely inform them that you are specialized in event-related assistance and suggest contacting a relevant expert or using a general-purpose AI service for such queries.
+do not answer anything which is not related to events or platform related queries.`,
 };
 
 // @desc    Chat with AI assistant
@@ -41,7 +46,7 @@ exports.chatWithAI = async (req, res, next) => {
     const { message } = req.body;
     const studentId = req.student._id;
 
-    if (!message || message.trim() === '') {
+    if (!message || message.trim() === "") {
       return next(new AppError("Message is required", 400));
     }
 
@@ -50,29 +55,35 @@ exports.chatWithAI = async (req, res, next) => {
       // Get recent and upcoming events for context
       Event.find({
         $or: [
-          { status: 'upcoming' },
-          { status: 'ongoing' },
-          { createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } // Last 30 days
-        ]
+          { status: "upcoming" },
+          { status: "ongoing" },
+          {
+            createdAt: {
+              $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+            },
+          }, // Last 30 days
+        ],
       })
-      .limit(15)
-      .populate('organizer', 'name email')
-      .lean(),
-      
+        .limit(15)
+        .populate("organizer", "name email")
+        .lean(),
+
       // Get student details for personalization
-      Student.findById(studentId).select('name email branch year interests enrolledEvents').lean(),
-      
+      Student.findById(studentId)
+        .select("name email branch year interests enrolledEvents")
+        .lean(),
+
       // Get student's enrolled events with details
       Event.find({ participants: studentId })
-        .populate('organizer', 'name email')
+        .populate("organizer", "name email")
         .limit(10)
-        .lean()
+        .lean(),
     ]);
 
     // Prepare context from the data
-    const eventsContext = events.map(event => ({
+    const eventsContext = events.map((event) => ({
       title: event.title,
-      description: event.description?.substring(0, 200) + '...',
+      description: event.description?.substring(0, 200) + "...",
       date: event.date,
       startDate: event.startDate,
       endDate: event.endDate,
@@ -82,7 +93,7 @@ exports.chatWithAI = async (req, res, next) => {
       status: event.status,
       maxParticipants: event.maxParticipants,
       currentParticipants: event.participants?.length || 0,
-      hasSpots: (event.participants?.length || 0) < event.maxParticipants
+      hasSpots: (event.participants?.length || 0) < event.maxParticipants,
     }));
 
     const studentContext = {
@@ -90,14 +101,14 @@ exports.chatWithAI = async (req, res, next) => {
       branch: student.branch,
       year: student.year,
       interests: student.interests || [],
-      enrolledEventsCount: student.enrolledEvents?.length || 0
+      enrolledEventsCount: student.enrolledEvents?.length || 0,
     };
 
-    const enrolledEventsContext = enrolledEvents.map(event => ({
+    const enrolledEventsContext = enrolledEvents.map((event) => ({
       title: event.title,
       date: event.date,
       status: event.status,
-      organizer: event.organizer?.name
+      organizer: event.organizer?.name,
     }));
 
     // Create enhanced system message with context
@@ -109,11 +120,13 @@ CURRENT USER PROFILE:
 - Name: ${studentContext.name}
 - Branch: ${studentContext.branch}
 - Year: ${studentContext.year}
-- Interests: ${studentContext.interests.join(', ') || 'Not specified'}
+- Interests: ${studentContext.interests.join(", ") || "Not specified"}
 - Events enrolled: ${studentContext.enrolledEventsCount}
 
 AVAILABLE EVENTS (${eventsContext.length} events):
-${eventsContext.map(event => `
+${eventsContext
+  .map(
+    (event) => `
 📅 ${event.title}
    📍 ${event.location}
    🗓️  ${new Date(event.date).toLocaleDateString()}
@@ -121,69 +134,87 @@ ${eventsContext.map(event => `
    🏷️  Category: ${event.category}
    📊 Status: ${event.status}
    👥 Participants: ${event.currentParticipants}/${event.maxParticipants}
-   ${event.hasSpots ? '✅ Spots available' : '❌ Full'}
+   ${event.hasSpots ? "✅ Spots available" : "❌ Full"}
    📝 ${event.description}
-`).join('\n')}
+`
+  )
+  .join("\n")}
 
 USER'S ENROLLED EVENTS:
-${enrolledEventsContext.length > 0 ? 
-  enrolledEventsContext.map(event => `
-  ✅ ${event.title} (${event.status}) - Organized by ${event.organizer} on ${new Date(event.date).toLocaleDateString()}
-  `).join('\n') : 
-  'No events enrolled yet.'
+${
+  enrolledEventsContext.length > 0
+    ? enrolledEventsContext
+        .map(
+          (event) => `
+  ✅ ${event.title} (${event.status}) - Organized by ${
+            event.organizer
+          } on ${new Date(event.date).toLocaleDateString()}
+  `
+        )
+        .join("\n")
+    : "No events enrolled yet."
 }
 
-CURRENT DATE: ${new Date().toISOString().split('T')[0]}
+CURRENT DATE: ${new Date().toISOString().split("T")[0]}
 
 IMPORTANT INSTRUCTIONS:
 - When suggesting events, prioritize ones with available spots
 - Be specific about event dates, locations, and organizers
 - If user asks about their enrolled events, use the enrolled events list above
-- For event recommendations, consider the user's interests: ${studentContext.interests.join(', ')}
+- For event recommendations, consider the user's interests: ${studentContext.interests.join(
+        ", "
+      )}
 - Always be encouraging about participating in events
 - If an event is full, suggest similar upcoming events
-- For technical issues, provide helpful guidance or suggest contacting support`
+- For technical issues, provide helpful guidance or suggest contacting support`,
     };
 
     // Call Groq API
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         contextEnhancedMessage,
-        { role: "user", content: message.trim() }
+        { role: "user", content: message.trim() },
       ],
       model: "openai/gpt-oss-20b", // You can change this to other Groq models
       temperature: 0.7,
       max_tokens: 1024,
-      stream: false
+      stream: false,
     });
 
-    const response = chatCompletion.choices[0]?.message?.content || 
+    const response =
+      chatCompletion.choices[0]?.message?.content ||
       "I apologize, but I couldn't process your request at the moment. Please try again.";
 
     // Log the interaction (optional)
-    console.log(`AI Chat - Student: ${studentContext.name}, Message: ${message.substring(0, 50)}...`);
+    console.log(
+      `AI Chat - Student: ${studentContext.name}, Message: ${message.substring(
+        0,
+        50
+      )}...`
+    );
 
     res.status(200).json({
       status: "success",
       data: {
         response,
         timestamp: new Date().toISOString(),
-        messageId: Date.now().toString()
-      }
+        messageId: Date.now().toString(),
+      },
     });
-
   } catch (error) {
     console.error("Chat API error:", error);
-    
+
     // Handle specific Groq API errors
-    if (error.code === 'invalid_api_key') {
+    if (error.code === "invalid_api_key") {
       return next(new AppError("AI service configuration error", 500));
     }
-    
-    if (error.code === 'rate_limit_exceeded') {
-      return next(new AppError("AI service is busy. Please try again later.", 429));
+
+    if (error.code === "rate_limit_exceeded") {
+      return next(
+        new AppError("AI service is busy. Please try again later.", 429)
+      );
     }
-    
+
     return next(new AppError("Failed to process chat message", 500));
   }
 };
@@ -193,8 +224,10 @@ IMPORTANT INSTRUCTIONS:
 // @access  Private
 exports.getChatSuggestions = async (req, res, next) => {
   try {
-    const student = await Student.findById(req.student._id).select('interests enrolledEvents');
-    
+    const student = await Student.findById(req.student._id).select(
+      "interests enrolledEvents"
+    );
+
     const suggestions = [
       "What events are happening this week?",
       "Show me events related to technology",
@@ -203,12 +236,12 @@ exports.getChatSuggestions = async (req, res, next) => {
       "Are there any workshops available?",
       "How do I earn certificates?",
       "Tell me about the points system",
-      "What events match my interests?"
+      "What events match my interests?",
     ];
 
     // Add personalized suggestions based on interests
     if (student.interests && student.interests.length > 0) {
-      student.interests.forEach(interest => {
+      student.interests.forEach((interest) => {
         suggestions.push(`Show me ${interest} events`);
       });
     }
@@ -220,8 +253,8 @@ exports.getChatSuggestions = async (req, res, next) => {
     res.status(200).json({
       status: "success",
       data: {
-        suggestions: selectedSuggestions
-      }
+        suggestions: selectedSuggestions,
+      },
     });
   } catch (error) {
     console.error("Chat suggestions error:", error);
@@ -234,15 +267,15 @@ exports.getChatSuggestions = async (req, res, next) => {
 // @access  Private
 exports.getEventCategories = async (req, res, next) => {
   try {
-    const categories = await Event.distinct('category', { 
-      status: { $in: ['upcoming', 'ongoing'] } 
+    const categories = await Event.distinct("category", {
+      status: { $in: ["upcoming", "ongoing"] },
     });
-    
+
     res.status(200).json({
       status: "success",
       data: {
-        categories: categories.filter(cat => cat).sort() // Remove nulls and sort
-      }
+        categories: categories.filter((cat) => cat).sort(), // Remove nulls and sort
+      },
     });
   } catch (error) {
     console.error("Categories fetch error:", error);

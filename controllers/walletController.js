@@ -1,5 +1,8 @@
 const Student = require("../models/student");
 
+// @desc Update Metamask address
+// @route PATCH /api/wallet
+// @access Private
 exports.updateWallet = async (req, res, next) => {
   try {
     const { metaMaskAddress } = req.body;

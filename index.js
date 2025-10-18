@@ -12,7 +12,7 @@ const hpp = require("hpp");
 const path = require("path");
 const compression = require("compression");
 const connectDB = require("./config/connectdb");
-const chatRoutes = require('./routes/chatRoutes');
+const chatRoutes = require("./routes/chatRoutes");
 
 // Import routes
 const authRoutes = require("./routes/authRoutes");
@@ -21,13 +21,13 @@ const walletRoutes = require("./routes/walletRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const roleRoutes = require("./routes/roleRoutes");
 const passwordRoutes = require("./routes/passwordRoutes");
-const logRoutes = require('./routes/logRoutes');
+const logRoutes = require("./routes/logRoutes");
 
 // Import error handlers
 const AppError = require("./utils/appError");
 const globalErrorHandler = require("./middleware/errorMiddleware");
-const { apiLogger } = require('./middleware/logger');
-const errorLogger = require('./middleware/errorLogger');
+const { apiLogger } = require("./middleware/logger");
+const errorLogger = require("./middleware/errorLogger");
 
 // Initialize Express app
 const app = express();
@@ -156,8 +156,8 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/password", passwordRoutes);
-app.use('/api/admin/logs', logRoutes);
-app.use('/api/chat', chatRoutes);
+app.use("/api/admin/logs", logRoutes);
+app.use("/api/chat", chatRoutes);
 app.get("/api/tech-news", async (req, res) => {
   const url = `https://newsapi.org/v2/top-headlines?category=technology&pageSize=8&apiKey=${process.env.NEWS_API_KEY}`;
   try {
